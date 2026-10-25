@@ -9,6 +9,7 @@ import {
 } from "mediabunny";
 import type { Asset, Id } from "../project/model";
 import { FPS_30, type FrameRate, frameRateFromNumber, secondsToMicros } from "../time";
+import { ImageSource } from "./image-source";
 
 export class UnsupportedMediaError extends Error {
   override name = "UnsupportedMediaError";
@@ -37,20 +38,23 @@ const CODEC_NAMES: Record<string, string> = {
 
 /**
  * An opened media file: what it contains, plus the decoders that read it.
- * Keep one per asset while the asset is in use; `dispose` releases the
- * decoders and the file handle.
+ * Video and audio go through Mediabunny; images through the browser's own
+ * decoders. Keep one per asset while the asset is in use; `dispose`
+ * releases the decoders and the file handle.
  */
 export class MediaFile {
   private constructor(
-    private readonly input: Input,
+    private readonly input: Input | null,
     readonly info: MediaInfo,
     readonly video: VideoSampleSink | null,
     readonly audio: AudioBufferSink | null,
     /** Problems that don't stop the file from being used, for the UI to show. */
     readonly warnings: readonly string[],
+    readonly image: ImageSource | null = null,
   ) {}
 
   static async open(file: File): Promise<MediaFile> {
+    if (file.type.startsWith("image/")) return MediaFile.openImage(file);
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
     try {
       return await MediaFile.probe(input, file.name);
@@ -61,7 +65,25 @@ export class MediaFile {
   }
 
   dispose(): void {
-    this.input.dispose();
+    this.input?.dispose();
+    this.image?.dispose();
+  }
+
+  private static async openImage(file: File): Promise<MediaFile> {
+    let image: ImageSource;
+    try {
+      image = await ImageSource.open(file);
+    } catch {
+      throw new UnsupportedMediaError(`${file.name} isn't an image this browser can open.`);
+    }
+    const info: MediaInfo = {
+      kind: "image",
+      name: file.name,
+      start: 0,
+      duration: image.duration,
+      image: { width: image.width, height: image.height, animated: image.animated },
+    };
+    return new MediaFile(null, info, null, null, [], image);
   }
 
   private static async probe(input: Input, name: string): Promise<MediaFile> {
