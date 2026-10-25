@@ -8,7 +8,7 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] MIT licence and README
 - [x] Engine unit tests, type checks, lint and production build all pass
 
-## 1. Engine spike: import, play, scrub, trim, export
+## 1. Engine spike: import, play, scrub, trim, export ✅
 
 - [x] Frame-accurate time maths: integer microseconds, exact frame rates such as 30000/1001
 - [x] Project data model, with all clip timing going through one mapping
@@ -17,9 +17,9 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] WebGL2 compositor: GPU upload, phone rotation and flip, mipmapped downscaling
 - [x] Player: audio-clock playback so video follows the sound, plus coalesced scrubbing
 - [x] Export: same renderer as the preview, offline audio mix, H.264/AAC MP4
-- [ ] Editor test page: import, play/pause, scrub, frame stepping, trim in/out, export with progress and cancel
-- [ ] Browser tests in real Chrome: import, play, scrub, trim, export, re-import the export
-- [ ] Run and verified end to end
+- [x] Editor test page: import, play/pause, scrub, frame stepping, trim in/out, export with progress and cancel
+- [x] Browser tests in real Chrome: import, play, scrub, trim, export, re-import the export
+- [x] Run and verified end to end
 
 ## 2. Timeline and layers
 
