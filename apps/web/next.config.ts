@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // Stops `next dev` from writing an AGENTS.md into the app.
+  agentRules: false,
   // The engine is shipped as TypeScript source from the workspace.
   transpilePackages: ["@akira/engine"],
   turbopack: {
