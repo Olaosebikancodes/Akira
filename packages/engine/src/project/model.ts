@@ -39,7 +39,7 @@ export interface Marker {
 }
 
 /** Text clips have no file; they all refer to the built-in text asset. */
-export type AssetKind = "video" | "audio" | "image" | "font" | "text";
+export type AssetKind = "video" | "audio" | "image" | "font" | "lut" | "text";
 
 /** An imported media file and what we learned about it when probing. */
 export interface Asset {
@@ -71,6 +71,10 @@ export interface Asset {
   /** Set on imported font files: the family name text clips use to pick it. */
   font?: {
     family: string;
+  };
+  /** Set on imported .cube colour lookup tables. */
+  lut?: {
+    size: number;
   };
 }
 
@@ -122,6 +126,121 @@ export interface Clip {
   text?: ClipText;
   /** How the clip enters, leaves and moves while on screen. */
   animation?: ClipAnimation;
+  /** Colour grading. Omitted means the picture is untouched. */
+  adjust?: Adjustments;
+  /** A .cube colour lookup table, blended in by `intensity` (0 to 1). */
+  lut?: { assetId: Id; intensity: number };
+  /** Effects, applied in order. */
+  effects?: Effect[];
+  /** How the clip combines with what's beneath it. Omitted means normal. */
+  blend?: BlendMode;
+  mask?: Mask;
+  chromaKey?: ChromaKey;
+  enhance?: Enhance;
+  /** A transition into the next clip on the same track. Only kept while the two touch. */
+  transition?: ClipTransition;
+}
+
+/** Colour grading. Every value runs -1 to 1 except vignette (0 to 1); 0 changes nothing. */
+export interface Adjustments {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  exposure: number;
+  temperature: number;
+  tint: number;
+  highlights: number;
+  shadows: number;
+  vignette: number;
+}
+
+export const NEUTRAL_ADJUSTMENTS: Adjustments = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  exposure: 0,
+  temperature: 0,
+  tint: 0,
+  highlights: 0,
+  shadows: 0,
+  vignette: 0,
+};
+
+export type EffectKind = "blur" | "glitch" | "vhs" | "grain" | "shake" | "flash";
+
+export interface Effect {
+  kind: EffectKind;
+  /** 0 to 1. */
+  amount: number;
+}
+
+export type BlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion"
+  | "add";
+
+export type MaskShape = "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star";
+
+/** A shape that shows part of a clip. Sizes and positions are fractions of the clip's picture. */
+export interface Mask {
+  shape: MaskShape;
+  /** Centre offset from the picture's centre. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Degrees clockwise. */
+  rotation: number;
+  /** How soft the edge is, 0 (sharp) to 1. */
+  feather: number;
+  /** Show what's outside the shape instead. */
+  invert: boolean;
+}
+
+/** Makes one colour transparent, for green and blue screens. */
+export interface ChromaKey {
+  color: string;
+  /** How far from the key colour still counts as background, 0 to 1. */
+  tolerance: number;
+  /** Width of the soft edge between keyed and kept, 0 to 1. */
+  softness: number;
+  /** How much of the key colour's tint to remove from edges and reflections, 0 to 1. */
+  spill: number;
+}
+
+/** Classic clean-up and sharpening. None of it is AI. */
+export interface Enhance {
+  /** 0 to 1. */
+  sharpen: number;
+  /** Edge-preserving noise reduction, 0 to 1. */
+  denoise: number;
+  /** Smooths banding in skies and gradients, 0 to 1. */
+  deband: number;
+  /** Softens the blocky squares heavy compression leaves, 0 to 1. */
+  deblock: number;
+  /** Upscale with AMD FSR 1 when the clip is shown larger than its own resolution. */
+  upscale: boolean;
+  /** Black and white points per channel from auto colour, or null when off. */
+  autoColor: { black: [number, number, number]; white: [number, number, number] } | null;
+}
+
+export const NO_ENHANCE: Enhance = { sharpen: 0, denoise: 0, deband: 0, deblock: 0, upscale: false, autoColor: null };
+
+export interface ClipTransition {
+  /** A transition from the catalogue, e.g. "Fade" or "CircleOpen". */
+  kind: string;
+  /** Centred on the cut: half before, half after. */
+  duration: Micros;
 }
 
 export interface ClipText {

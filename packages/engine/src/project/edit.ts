@@ -2,15 +2,24 @@ import { frameToMicros, type Micros } from "../time";
 import type { Cue } from "./captions";
 import { createId, createTextClip, createTrack } from "./create";
 import {
+  type Adjustments,
   type Asset,
   type AudioFilters,
+  type BlendMode,
+  type ChromaKey,
   CAPTION_POSITION,
   CAPTION_STYLE,
   type Clip,
   type ClipAnimation,
+  type ClipTransition,
+  type Effect,
+  type Enhance,
   type Crop,
   IDENTITY_TRANSFORM,
   type Id,
+  type Mask,
+  NEUTRAL_ADJUSTMENTS,
+  NO_ENHANCE,
   type Project,
   type Track,
   type TextStyle,
@@ -319,19 +328,78 @@ export interface ClipLook {
   transform?: Partial<Transform>;
   crop?: Partial<Crop>;
   volume?: number;
+  adjust?: Partial<Adjustments>;
+  /** null removes the LUT. */
+  lut?: { assetId: Id; intensity: number } | null;
+  effects?: Effect[];
+  blend?: BlendMode;
+  /** null removes the mask. */
+  mask?: Partial<Mask> | null;
+  /** null turns keying off. */
+  chromaKey?: Partial<ChromaKey> | null;
+  enhance?: Partial<Enhance>;
 }
 
-/** Updates how a clip looks or sounds. Doesn't move it in time. */
+/** Updates how a clip looks or sounds. Doesn't move it in time. Values are kept in range. */
 export function updateClipLook(project: Project, clipId: Id, look: ClipLook): Project {
   const found = locateClip(project, clipId);
   if (!found || found.track.locked) return project;
   const { clip, trackIndex } = found;
-  return replaceClip(project, trackIndex, {
+  const next: Clip = {
     ...clip,
     transform: look.transform ? { ...clip.transform, ...look.transform } : clip.transform,
     crop: look.crop ? clampCrop({ ...clip.crop, ...look.crop }) : clip.crop,
     volume: look.volume === undefined ? clip.volume : Math.max(0, look.volume),
-  });
+  };
+  if (look.adjust) next.adjust = clampAdjustments({ ...NEUTRAL_ADJUSTMENTS, ...clip.adjust, ...look.adjust });
+  if (look.lut !== undefined) next.lut = look.lut ? { ...look.lut, intensity: clamp(look.lut.intensity, 0, 1) } : undefined;
+  if (look.effects) next.effects = look.effects.map((effect) => ({ ...effect, amount: clamp(effect.amount, 0, 1) }));
+  if (look.blend) next.blend = look.blend;
+  if (look.mask !== undefined) next.mask = look.mask ? clampMask({ ...DEFAULT_MASK, ...clip.mask, ...look.mask }) : undefined;
+  if (look.chromaKey !== undefined) {
+    next.chromaKey = look.chromaKey ? clampKey({ ...DEFAULT_CHROMA_KEY, ...clip.chromaKey, ...look.chromaKey }) : undefined;
+  }
+  if (look.enhance) next.enhance = clampEnhance({ ...NO_ENHANCE, ...clip.enhance, ...look.enhance });
+  return replaceClip(project, trackIndex, next);
+}
+
+/** A mask's starting shape: a centred circle with a soft edge. */
+export const DEFAULT_MASK: Mask = {
+  shape: "circle",
+  x: 0,
+  y: 0,
+  width: 0.6,
+  height: 0.6,
+  rotation: 0,
+  feather: 0.1,
+  invert: false,
+};
+
+/** Keying starts on green screen, the usual choice. */
+export const DEFAULT_CHROMA_KEY: ChromaKey = { color: "#00ff00", tolerance: 0.35, softness: 0.15, spill: 0.5 };
+
+export const MIN_TRANSITION: Micros = 100_000;
+
+/**
+ * Puts a transition between a clip and the next one on its track, or
+ * removes it with null. The two must touch, and the transition is limited
+ * to the shorter of them.
+ */
+export function setTransition(project: Project, clipId: Id, transition: ClipTransition | null): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, track, trackIndex } = found;
+  if (!transition) return replaceClip(project, trackIndex, { ...clip, transition: undefined });
+  const next = followingClip(track, clip);
+  if (!next) return project;
+  const duration = clamp(transition.duration, MIN_TRANSITION, Math.min(clipDuration(clip), clipDuration(next)));
+  return replaceClip(project, trackIndex, { ...clip, transition: { ...transition, duration } });
+}
+
+/** The clip that starts exactly where this one ends on the same track, if any. */
+export function followingClip(track: Track, clip: Clip): Clip | undefined {
+  const end = clipEnd(clip);
+  return track.clips.find((other) => other.id !== clip.id && other.start === end);
 }
 
 /** Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180]. */
@@ -472,16 +540,17 @@ function trackKindFor(project: Project, clip: Clip): TrackKind {
 
 /** Splits a clip into two pieces at `time`; the right piece gets a new id. */
 function cutAt(project: Project, clip: Clip, time: Micros): [Clip, Clip] {
-  // The left piece keeps the fade-in and the right the fade-out, so a cut never dips.
+  // The left piece keeps the fade-in and the right the fade-out, so a cut
+  // never dips; the transition into the next clip stays at the right end.
   if (isStill(project, clip)) {
     return [
-      { ...clip, sourceIn: 0, sourceOut: time - clip.start, fadeOut: 0 },
+      { ...clip, sourceIn: 0, sourceOut: time - clip.start, fadeOut: 0, transition: undefined },
       { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time, fadeIn: 0 },
     ];
   }
   const cut = toSourceTime(clip, time);
   return [
-    { ...clip, sourceOut: cut, fadeOut: 0 },
+    { ...clip, sourceOut: cut, fadeOut: 0, transition: undefined },
     { ...clip, id: createId(), start: time, sourceIn: cut, fadeIn: 0 },
   ];
 }
@@ -497,12 +566,23 @@ function packTrack(track: Track): Track {
   return changed ? { ...track, clips } : track;
 }
 
-/** Shortens fades and in/out animations that no longer fit their clip, e.g. after a trim. */
+/**
+ * Shortens fades and in/out animations that no longer fit their clip, e.g.
+ * after a trim, and drops transitions whose clips no longer touch.
+ */
 function fitTimings(track: Track): Track {
   let changed = false;
   const clips = track.clips.map((clip) => {
     const length = clipDuration(clip);
     let next = clip;
+    if (clip.transition) {
+      const following = followingClip(track, clip);
+      if (!following) next = { ...next, transition: undefined };
+      else {
+        const longest = Math.min(length, clipDuration(following));
+        if (clip.transition.duration > longest) next = { ...next, transition: { ...clip.transition, duration: longest } };
+      }
+    }
     if (clip.fadeIn + clip.fadeOut > length) {
       const scale = length / (clip.fadeIn + clip.fadeOut);
       next = { ...next, fadeIn: Math.floor(clip.fadeIn * scale), fadeOut: Math.floor(clip.fadeOut * scale) };
@@ -610,6 +690,37 @@ function replaceClip(project: Project, trackIndex: number, clip: Clip): Project 
 
 function updateTrackAt(project: Project, index: number, update: (track: Track) => Track): Project {
   return { ...project, tracks: project.tracks.map((track, i) => (i === index ? update(track) : track)) };
+}
+
+function clampAdjustments(adjust: Adjustments): Adjustments {
+  const out = { ...adjust };
+  for (const key of Object.keys(out) as (keyof Adjustments)[]) {
+    out[key] = clamp(out[key], key === "vignette" ? 0 : -1, 1);
+  }
+  return out;
+}
+
+function clampMask(mask: Mask): Mask {
+  return {
+    ...mask,
+    width: clamp(mask.width, 0.01, 4),
+    height: clamp(mask.height, 0.01, 4),
+    feather: clamp(mask.feather, 0, 1),
+  };
+}
+
+function clampKey(key: ChromaKey): ChromaKey {
+  return { ...key, tolerance: clamp(key.tolerance, 0, 1), softness: clamp(key.softness, 0, 1), spill: clamp(key.spill, 0, 1) };
+}
+
+function clampEnhance(enhance: Enhance): Enhance {
+  return {
+    ...enhance,
+    sharpen: clamp(enhance.sharpen, 0, 1),
+    denoise: clamp(enhance.denoise, 0, 1),
+    deband: clamp(enhance.deband, 0, 1),
+    deblock: clamp(enhance.deblock, 0, 1),
+  };
 }
 
 function clampCrop(crop: Crop): Crop {

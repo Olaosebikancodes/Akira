@@ -17,6 +17,7 @@ import {
   rotateClip90,
   setAudioFilters,
   setClipAnimation,
+  setTransition,
   setClipFades,
   setClipSpeed,
   setTrackFlag,
@@ -474,5 +475,64 @@ describe("addCaptions", () => {
     const first = findClip(captioned, clipIds[0]!)!;
     expect(first.text).toEqual({ content: "One", style: CAPTION_STYLE });
     expect(first.transform.y).toBeGreaterThan(0.3);
+  });
+});
+
+describe("grading and effects", () => {
+  const project = projectWith({ clips: [clip("a", VIDEO, 0, 2 * S)] });
+
+  it("merges adjustments onto neutral and keeps them in range", () => {
+    const graded = updateClipLook(project, "a", { adjust: { contrast: 0.4, vignette: -1, saturation: 3 } });
+    expect(findClip(graded, "a")?.adjust).toMatchObject({ contrast: 0.4, vignette: 0, saturation: 1, brightness: 0 });
+  });
+
+  it("adds and removes a mask and a chroma key", () => {
+    let edited = updateClipLook(project, "a", { mask: { shape: "heart", feather: 2 }, chromaKey: { tolerance: 0.5 } });
+    expect(findClip(edited, "a")?.mask).toMatchObject({ shape: "heart", feather: 1, width: 0.6 });
+    expect(findClip(edited, "a")?.chromaKey).toMatchObject({ color: "#00ff00", tolerance: 0.5 });
+    edited = updateClipLook(edited, "a", { mask: null, chromaKey: null });
+    expect(findClip(edited, "a")?.mask).toBeUndefined();
+    expect(findClip(edited, "a")?.chromaKey).toBeUndefined();
+  });
+
+  it("keeps effect amounts and enhance settings in range", () => {
+    const edited = updateClipLook(project, "a", {
+      effects: [{ kind: "glitch", amount: 5 }],
+      enhance: { sharpen: 2, upscale: true },
+    });
+    expect(findClip(edited, "a")?.effects).toEqual([{ kind: "glitch", amount: 1 }]);
+    expect(findClip(edited, "a")?.enhance).toMatchObject({ sharpen: 1, upscale: true, denoise: 0 });
+  });
+});
+
+describe("transitions", () => {
+  const twoClips = () => projectWith({ clips: [clip("a", VIDEO, 0, 2 * S), clip("b", VIDEO, 2 * S, S)] });
+
+  it("joins a clip to the next one, no longer than the shorter clip", () => {
+    const joined = setTransition(twoClips(), "a", { kind: "Fade", duration: 5 * S });
+    expect(findClip(joined, "a")?.transition).toEqual({ kind: "Fade", duration: S });
+  });
+
+  it("needs a clip right after", () => {
+    const project = twoClips();
+    expect(setTransition(project, "b", { kind: "Fade", duration: S })).toBe(project);
+  });
+
+  it("is dropped when the clips stop touching", () => {
+    let project = projectWith(
+      { clips: [] },
+      { clips: [clip("x", IMAGE, 0, 2 * S), clip("y", IMAGE, 2 * S, 2 * S)] },
+    );
+    project = setTransition(project, "x", { kind: "Fade", duration: S });
+    expect(findClip(project, "x")?.transition).toBeDefined();
+    project = moveClip(project, "y", { trackId: "track1", time: 3 * S });
+    expect(findClip(project, "x")?.transition).toBeUndefined();
+  });
+
+  it("stays at the cut when the left clip is split", () => {
+    const joined = setTransition(twoClips(), "a", { kind: "Fade", duration: S / 2 });
+    const { project, rightId } = splitClip(joined, "a", S);
+    expect(findClip(project, "a")?.transition).toBeUndefined();
+    expect(findClip(project, rightId!)?.transition).toEqual({ kind: "Fade", duration: S / 2 });
   });
 });
