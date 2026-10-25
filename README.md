@@ -4,7 +4,7 @@ A high-quality video editor that runs in your browser.
 
 No AI and no uploads. Your footage never leaves your machine: decoding, effects and export all run locally on your GPU through WebCodecs and WebGL2.
 
-> **Status:** early development. The features below are the v1 plan, not what works today.
+> **Status:** early development. The features below are the v1 plan, not what works today. See the [roadmap](ROADMAP.md) for progress.
 
 ## Planned for v1
 
