@@ -2,6 +2,7 @@
 
 import {
   ASPECT_PRESETS,
+  assetOf,
   type Background,
   type Clip,
   currentAspect,
@@ -33,7 +34,8 @@ import {
 } from "@akira/engine";
 import { ArrowClockwiseIcon, FlipHorizontalIcon, FlipVerticalIcon } from "@phosphor-icons/react";
 import { useId } from "react";
-import { beginGesture, commit, type Edit, endGesture, updateGesture, useEditor } from "./store";
+import { AnimationSection, TextSections } from "./inspector-text";
+import { commit, endGesture, liveEdit, useEditor } from "./store";
 import { Button, focusRing, IconButton, Section, Segmented, SliderField } from "./ui";
 
 const FRAME_RATES = [
@@ -47,11 +49,7 @@ const FRAME_RATES = [
   { label: "60", rate: FPS_60 },
 ];
 
-/** Slider edits: the first change starts a gesture, releasing ends it, so a drag is one undo step. */
-function live(edit: Edit): void {
-  if (!useEditor.getState().gestureStart) beginGesture();
-  updateGesture(edit);
-}
+const live = liveEdit;
 
 export function Inspector() {
   const selection = useEditor((s) => s.selection);
@@ -62,7 +60,7 @@ export function Inspector() {
     <aside aria-label="Inspector" className="flex min-h-0 flex-col overflow-y-auto bg-panel">
       <header className="flex h-11 shrink-0 items-center border-b border-border px-4">
         <h2 className="truncate text-[13px] font-semibold tracking-tight">
-          {found ? project.assets[found.clip.assetId]?.name : selection.length > 1 ? `${selection.length} clips` : "Project"}
+          {found ? (found.clip.text ? "Text" : assetOf(project, found.clip).name) : selection.length > 1 ? `${selection.length} clips` : "Project"}
         </h2>
       </header>
       {found ? (
@@ -79,7 +77,7 @@ export function Inspector() {
 }
 
 function ClipInspector({ project, clip, isVisual, locked }: { project: Project; clip: Clip; isVisual: boolean; locked: boolean }) {
-  const asset = project.assets[clip.assetId]!;
+  const asset = assetOf(project, clip);
   const still = isStill(project, clip);
   const { transform, crop } = clip;
   const look = (change: Parameters<typeof updateClipLook>[2]) => live((p) => updateClipLook(p, clip.id, change));
@@ -90,6 +88,8 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
 
   return (
     <div>
+      {clip.text && <TextSections clip={clip} />}
+
       {isVisual && (
         <Section
           title="Transform"
@@ -110,7 +110,7 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
         </Section>
       )}
 
-      {isVisual && (
+      {isVisual && !clip.text && (
         <Section title="Crop">
           <SliderField label="Left" unit="%" value={crop.left * 100} min={0} max={95} step={0.5} onChange={(v) => look({ crop: { left: v / 100 } })} onCommit={endGesture} />
           <SliderField label="Right" unit="%" value={crop.right * 100} min={0} max={95} step={0.5} onChange={(v) => look({ crop: { right: v / 100 } })} onCommit={endGesture} />
@@ -119,6 +119,8 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
           <Button onClick={() => commit((p) => updateClipLook(p, clip.id, { crop: NO_CROP }))}>Reset crop</Button>
         </Section>
       )}
+
+      {isVisual && <AnimationSection clip={clip} />}
 
       {!still && (
         <Section title="Speed">

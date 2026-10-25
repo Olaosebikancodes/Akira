@@ -1,9 +1,11 @@
 import {
   type Asset,
+  assetOf,
   type Clip,
   clipAt,
   type LayerGeometry,
   layerGeometry,
+  measureText,
   type Micros,
   type Project,
 } from "@akira/engine";
@@ -20,12 +22,17 @@ export interface VisibleLayer {
 
 /** The clips on screen at `time`, bottom to top, with where each sits on the canvas. */
 export function visibleLayers(project: Project, time: Micros): VisibleLayer[] {
+  const { width, height } = project.canvas;
   const layers: VisibleLayer[] = [];
   for (const track of project.tracks) {
     if (track.kind !== "video" || track.hidden) continue;
     const clip = clipAt(track, time);
-    const size = clip && pictureSize(project.assets[clip.assetId]!);
-    if (!clip || !size) continue;
+    if (!clip) continue;
+    // Text keeps its natural size, measured the same way the renderer lays it out.
+    const size = clip.text
+      ? measureText(clip.text, clip.text.style.size * Math.min(width, height))
+      : pictureSize(assetOf(project, clip));
+    if (!size) continue;
     layers.push({
       clip,
       geometry: layerGeometry({
@@ -36,8 +43,9 @@ export function visibleLayers(project: Project, time: Micros): VisibleLayer[] {
         flip: false,
         transform: clip.transform,
         crop: clip.crop,
-        canvasWidth: project.canvas.width,
-        canvasHeight: project.canvas.height,
+        canvasWidth: width,
+        canvasHeight: height,
+        fit: clip.text ? "natural" : "contain",
       }),
     });
   }

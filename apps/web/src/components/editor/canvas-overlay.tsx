@@ -3,7 +3,7 @@
 import { type Clip, type Point, pointInQuad, updateClipLook } from "@akira/engine";
 import { type PointerEvent, useState } from "react";
 import { visibleLayers } from "./layers";
-import { beginGesture, endGesture, select, updateGesture, useEditor } from "./store";
+import { beginGesture, endGesture, requestTextFocus, select, updateGesture, useEditor } from "./store";
 
 /** Within this fraction of the canvas, a dragged clip snaps to the centre lines. */
 const CENTRE_SNAP = 0.012;
@@ -107,6 +107,10 @@ export function CanvasOverlay({ scale }: { scale: number }) {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onDoubleClick={() => {
+        // Double-clicking text jumps to editing its words, as in most editors.
+        if (selected?.clip.text) requestTextFocus();
+      }}
       aria-hidden
     >
       {guides.x && <line x1={width / 2} y1={0} x2={width / 2} y2={height} className="stroke-accent" strokeWidth={1 / scale} />}

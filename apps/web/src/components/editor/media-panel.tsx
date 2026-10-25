@@ -9,7 +9,7 @@ import { importFiles, useEditor } from "./store";
 import { focusRing } from "./ui";
 
 export const ASSET_DRAG_TYPE = "application/x-akira-asset";
-const ACCEPT = "video/*,audio/*,image/*";
+const ACCEPT = "video/*,audio/*,image/*,.srt,.ttf,.otf,.woff,.woff2";
 
 export function MediaPanel() {
   const assets = useEditor((s) => s.project.assets);
@@ -32,9 +32,8 @@ export function MediaPanel() {
   }
 
   return (
-    <section
-      aria-label="Media"
-      className={`flex min-h-0 flex-col bg-panel ${dropping ? "outline-2 -outline-offset-2 outline-ring" : ""}`}
+    <div
+      className={`flex min-h-0 flex-1 flex-col bg-panel ${dropping ? "outline-2 -outline-offset-2 outline-ring" : ""}`}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
@@ -43,8 +42,8 @@ export function MediaPanel() {
       onDragLeave={() => setDropping(false)}
       onDrop={onDrop}
     >
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border pl-4 pr-2">
-        <h2 className="text-[13px] font-semibold tracking-tight">Media</h2>
+      <header className="flex h-11 shrink-0 items-center justify-between pl-4 pr-2">
+        <p className="text-xs text-muted">{list.length === 1 ? "1 file" : `${list.length} files`}</p>
         <input id={inputId} type="file" accept={ACCEPT} multiple className="peer sr-only" onChange={onChosen} />
         <label
           htmlFor={inputId}
@@ -57,7 +56,7 @@ export function MediaPanel() {
 
       {list.length === 0 && importing === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <p className="text-[13px] text-muted">Drop video, audio or images here.</p>
+          <p className="text-[13px] text-muted">Drop video, audio, images, fonts or captions here.</p>
           <p className="text-xs text-subtle">Files open on this device and are never uploaded.</p>
         </div>
       ) : (
@@ -73,13 +72,31 @@ export function MediaPanel() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }
 
 function MediaTile({ asset }: { asset: Asset }) {
   const thumbnail = useEditor((s) => s.thumbnails.get(asset.id)?.[0]);
   const Placeholder = asset.kind === "audio" ? MusicNotesSimpleIcon : ImageSquareIcon;
+
+  if (asset.font) {
+    // Fonts aren't placed on the timeline; text clips pick them by name.
+    return (
+      <li className="flex min-w-0 flex-col gap-1.5">
+        <div
+          className="grid aspect-video place-items-center rounded-md bg-raised text-2xl text-foreground"
+          style={{ fontFamily: `"${asset.font.family}", sans-serif` }}
+          aria-hidden
+        >
+          Aa
+        </div>
+        <p className="truncate text-xs text-muted" title={asset.name}>
+          {asset.name}
+        </p>
+      </li>
+    );
+  }
 
   return (
     <li

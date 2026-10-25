@@ -3,9 +3,11 @@
 import {
   addMarker,
   type Asset,
+  CAPTION_POSITION,
   clipAt,
   clipEnd,
   createClip,
+  createTextClip,
   deleteClips,
   detachAudio,
   duplicateClips,
@@ -13,6 +15,8 @@ import {
   freezeFrame,
   type Id,
   insertClip,
+  type Micros,
+  type Project,
   locateClip,
   mainTrack,
   microsToFrame,
@@ -22,10 +26,11 @@ import {
   removeMarker,
   replaceClipAsset,
   splitClip,
+  type TextStyle,
   trimClip,
 } from "@akira/engine";
 import { startRecording } from "./recorder";
-import { commit, importFiles, notify, seek, select, setZoom, useEditor } from "./store";
+import { commit, importFiles, notify, requestTextFocus, seek, select, setZoom, useEditor } from "./store";
 
 const get = useEditor.getState;
 
@@ -199,6 +204,31 @@ function microphoneProblem(error: unknown): string {
   }
   if (name === "NotFoundError") return "No microphone was found. Connect one, then try again.";
   return `The microphone couldn't start: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+/** A video track above the main track with room from `start` to `end`, if there is one. */
+function freeOverlay(project: Project, start: Micros, end: Micros) {
+  return project.tracks
+    .slice(1)
+    .find(
+      (track) =>
+        track.kind === "video" &&
+        !track.locked &&
+        track.clips.every((clip) => clipEnd(clip) <= start || clip.start >= end),
+    );
+}
+
+/** Adds text at the playhead, on the first overlay track with room for it. */
+export function addText(style: TextStyle, content = "Your text", options: { caption?: boolean } = {}): void {
+  const { time } = get();
+  const duration = options.caption ? 2_500_000 : undefined;
+  const clip = createTextClip(time, { content, style }, duration, options.caption ? CAPTION_POSITION : {});
+  commit((project) => {
+    const track = freeOverlay(project, clip.start, clipEnd(clip));
+    return insertClip(project, clip, track ? { trackId: track.id, time: clip.start } : { time: clip.start });
+  });
+  select([clip.id]);
+  requestTextFocus();
 }
 
 export function stepFrames(frames: number): void {

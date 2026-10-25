@@ -17,7 +17,7 @@ import {
   zoomToFit,
 } from "./actions";
 import { Inspector } from "./inspector";
-import { MediaPanel } from "./media-panel";
+import { LeftPanel } from "./left-panel";
 import { Preview } from "./preview";
 import { dismissNotice, fontBaseUrl, redo, seek, select, selectAll, setSnapping, setZoom, togglePlayback, undo, useEditor } from "./store";
 import { Timeline } from "./timeline/timeline";
@@ -35,7 +35,7 @@ export function Editor() {
       <main className="hidden h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_minmax(220px,38vh)] lg:grid">
         <TopBar />
         <div className="grid min-h-0 grid-cols-[minmax(220px,17rem)_minmax(0,1fr)_minmax(240px,18rem)] gap-px bg-border">
-          <MediaPanel />
+          <LeftPanel />
           <Preview />
           <Inspector />
         </div>

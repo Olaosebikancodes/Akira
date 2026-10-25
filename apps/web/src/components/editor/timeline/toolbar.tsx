@@ -1,6 +1,6 @@
 "use client";
 
-import { clipAt, isStill, locateClip, mainTrack, wallClock } from "@akira/engine";
+import { assetOf, clipAt, isStill, locateClip, mainTrack, wallClock } from "@akira/engine";
 import {
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
@@ -48,7 +48,7 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
   const hasSelection = useEditor((s) => s.selection.length > 0);
   const recording = useEditor((s) => s.recording !== null);
   const target = targetId ? locateClip(project, targetId) : undefined;
-  const targetAsset = target && project.assets[target.clip.assetId];
+  const targetAsset = target && assetOf(project, target.clip);
   const isMoving = target ? !isStill(project, target.clip) : false;
   const canFreeze = target?.track.kind === "video" && isMoving;
   const canDetach = target?.track.kind === "video" && isMoving && !!targetAsset?.audio && target.clip.volume > 0;

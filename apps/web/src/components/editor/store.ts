@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  addCaptions,
   type Asset,
   computeWaveform,
   createId,
@@ -10,6 +11,7 @@ import {
   type Id,
   MediaFile,
   type Micros,
+  parseSrt,
   type Player,
   type Project,
   type Thumbnail,
@@ -66,6 +68,8 @@ interface EditorState {
   waveforms: ReadonlyMap<Id, Waveform>;
   importing: number;
   recording: VoiceoverSession | null;
+  /** Bumped to ask the inspector to focus the text box, e.g. after double-clicking text. */
+  textFocusRequest: number;
   notices: Notice[];
   player: Player | null;
 }
@@ -90,6 +94,7 @@ export const useEditor = create<EditorState>(() => ({
   waveforms: new Map(),
   importing: 0,
   recording: null,
+  textFocusRequest: 0,
   notices: [],
   player: null,
 }));
@@ -120,6 +125,16 @@ export function updateGesture(edit: Edit): void {
   const { gestureStart } = get();
   if (!gestureStart) return;
   set({ project: edit(gestureStart) });
+}
+
+/**
+ * For sliders and typing: the first change starts a gesture and later ones
+ * update it, so a whole adjustment is one undo step. Call endGesture when
+ * the slider is released or the field loses focus.
+ */
+export function liveEdit(edit: Edit): void {
+  if (!get().gestureStart) beginGesture();
+  updateGesture(edit);
 }
 
 export function endGesture(): void {
@@ -208,9 +223,14 @@ export function dismissNotice(notice: Notice): void {
  * every snapshot gains them, so undoing never makes media vanish.
  */
 export async function importFiles(files: readonly File[]): Promise<Asset[]> {
-  set({ importing: get().importing + files.length });
+  // Captions aren't media: they go straight onto the timeline as text.
+  const captions = files.filter((file) => /\.srt$/i.test(file.name));
+  for (const file of captions) void importCaptions(file);
+  const media = files.filter((file) => !captions.includes(file));
+
+  set({ importing: get().importing + media.length });
   const added: Asset[] = [];
-  for (const file of files) {
+  for (const file of media) {
     try {
       const media = await MediaFile.open(file);
       const asset: Asset = { id: createId(), ...media.info };
@@ -226,6 +246,26 @@ export async function importFiles(files: readonly File[]): Promise<Asset[]> {
     }
   }
   return added;
+}
+
+/** Reads an .srt file and adds a caption clip per cue on a new track. */
+export async function importCaptions(file: File): Promise<void> {
+  const cues = parseSrt(await file.text());
+  if (cues.length === 0) {
+    notify({ kind: "error", message: `No captions were found in ${file.name}. Check that it's a SubRip (.srt) file.` });
+    return;
+  }
+  let clipIds: Id[] = [];
+  commit((project) => {
+    const result = addCaptions(project, cues);
+    clipIds = result.clipIds;
+    return result.project;
+  });
+  set({ selection: clipIds });
+}
+
+export function requestTextFocus(): void {
+  set({ textFocusRequest: get().textFocusRequest + 1 });
 }
 
 function addAsset(asset: Asset, media: MediaFile): void {

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  assetOf,
   clipDuration,
   clipEnd,
   type Edge,
@@ -275,7 +276,7 @@ export function Timeline() {
                     <ClipItem
                       key={clip.id}
                       clip={clip}
-                      asset={project.assets[clip.assetId]!}
+                      asset={assetOf(project, clip)}
                       zoom={zoom}
                       height={row.height}
                       selected={selection.includes(clip.id)}

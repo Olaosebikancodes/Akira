@@ -40,8 +40,10 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
   const left = timeToX(clip.start, zoom);
   const width = Math.max(2, timeToX(clipDuration(clip), zoom));
   const frozen = clip.freezeAt !== undefined;
-  const color =
-    asset.kind === "audio"
+  const label = clip.text ? clip.text.content.split("\n")[0] || "Text" : asset.name;
+  const color = clip.text
+    ? "var(--clip-text)"
+    : asset.kind === "audio"
       ? "var(--clip-audio)"
       : frozen
         ? "var(--clip-freeze)"
@@ -59,7 +61,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
       type="button"
       data-clip={clip.id}
       aria-pressed={selected}
-      aria-label={`${asset.name}, ${formatTimecode(clip.start, rate)} to ${formatTimecode(clipEnd(clip), rate)}`}
+      aria-label={`${label}, ${formatTimecode(clip.start, rate)} to ${formatTimecode(clipEnd(clip), rate)}`}
       onPointerDown={(event) => onPointerDown(event, clip.id, null)}
       onClick={(event) => {
         // Pointer presses select in onPointerDown; this is Enter from the keyboard.
@@ -75,7 +77,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
       <span className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/55 to-transparent px-1.5 pb-2 pt-0.5 text-[11px] font-medium leading-tight text-foreground">
         {frozen && <SnowflakeIcon size={11} aria-hidden className="shrink-0" />}
         {silent && <SpeakerSimpleSlashIcon size={11} aria-hidden className="shrink-0" />}
-        <span className="truncate">{asset.name}</span>
+        <span className="truncate">{label}</span>
         {clip.speed !== 1 && <span className="shrink-0 rounded bg-black/50 px-1 font-mono text-[10px]">{clip.speed}×</span>}
       </span>
       {selected && <span aria-hidden className="pointer-events-none absolute inset-0 rounded border-2 border-[var(--clip-selected)]" />}
