@@ -15,7 +15,12 @@ export default defineConfig({
     // Real Chrome, not Playwright's Chromium, which ships without H.264 and AAC.
     channel: "chrome",
     launchOptions: {
-      args: ["--autoplay-policy=no-user-gesture-required"],
+      args: [
+        "--autoplay-policy=no-user-gesture-required",
+        // A fake microphone that is always allowed, for the voiceover test.
+        "--use-fake-device-for-media-stream",
+        "--use-fake-ui-for-media-stream",
+      ],
     },
   },
   webServer: {

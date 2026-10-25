@@ -16,8 +16,16 @@ export const FIXTURES = {
   sticker: path.join(FIXTURE_DIR, "sticker.png"),
   /** 16×16 GIF that loops green then blue, half a second each. */
   animated: path.join(FIXTURE_DIR, "animated.gif"),
+  /**
+   * 8 s of trouble for the clean-up filters: 30 Hz rumble (0-2 s), 50 Hz
+   * hum (2-4 s), then 1 kHz bursts over hiss (4-8 s), like speech in a noisy room.
+   */
+  dirty: path.join(FIXTURE_DIR, "dirty.wav"),
   notMedia: path.join(FIXTURE_DIR, "notes.txt"),
 };
+
+/** Where each part of the dirty recording is, in seconds. */
+export const DIRTY = { rumble: [0.2, 1.8], hum: [2.2, 3.8], bursts: 4 } as const;
 
 /**
  * Builds the test clips inside the browser with Mediabunny, so the repo
@@ -28,11 +36,9 @@ export async function ensureFixtures(page: Page): Promise<void> {
   mkdirSync(FIXTURE_DIR, { recursive: true });
   writeFileSync(FIXTURES.notMedia, "This is not a video.");
   writeFileSync(FIXTURES.animated, animatedGif());
+  writeFileSync(FIXTURES.dirty, dirtyWav());
 
-  // Node resolves Mediabunny's Node build; the page needs the browser bundle.
-  let packageDir = createRequire(__filename).resolve("mediabunny");
-  while (path.basename(packageDir) !== "mediabunny") packageDir = path.dirname(packageDir);
-  const bundle = readFileSync(path.join(packageDir, "dist/bundles/mediabunny.min.mjs"), "utf8");
+  const bundle = mediabunnyBundle();
 
   await page.goto("/");
   const clips = await page.evaluate(buildClips, bundle);
@@ -40,6 +46,81 @@ export async function ensureFixtures(page: Page): Promise<void> {
   writeFileSync(FIXTURES.rotated, Buffer.from(clips.rotated, "base64"));
   writeFileSync(FIXTURES.long, Buffer.from(clips.long, "base64"));
   writeFileSync(FIXTURES.sticker, Buffer.from(clips.sticker, "base64"));
+}
+
+/** 16-bit mono WAV of the dirty recording described on FIXTURES.dirty. */
+function dirtyWav(): Buffer {
+  const rate = 48_000;
+  const samples = new Int16Array(rate * 8);
+  let seed = 3;
+  for (let i = 0; i < samples.length; i++) {
+    const t = i / rate;
+    let value: number;
+    if (t < 2) value = 0.5 * Math.sin(2 * Math.PI * 30 * t);
+    else if (t < 4) value = 0.3 * Math.sin(2 * Math.PI * 50 * t);
+    else {
+      seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+      const hiss = ((seed / 2 ** 32) * 2 - 1) * 0.05;
+      value = hiss + ((t - 4) % 0.5 < 0.3 ? 0.3 * Math.sin(2 * Math.PI * 1000 * t) : 0);
+    }
+    samples[i] = Math.round(Math.max(-1, Math.min(1, value)) * 32767);
+  }
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + samples.byteLength, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(samples.byteLength, 40);
+  return Buffer.concat([header, Buffer.from(samples.buffer)]);
+}
+
+function mediabunnyBundle(): string {
+  // Node resolves Mediabunny's Node build; the page needs the browser bundle.
+  let packageDir = createRequire(__filename).resolve("mediabunny");
+  while (path.basename(packageDir) !== "mediabunny") packageDir = path.dirname(packageDir);
+  return readFileSync(path.join(packageDir, "dist/bundles/mediabunny.min.mjs"), "utf8");
+}
+
+/**
+ * Decodes a file's audio in the page and returns its RMS level in each
+ * window of seconds, so tests can check what an export actually sounds like.
+ */
+export async function audioLevels(page: Page, file: string, windows: readonly (readonly [number, number])[]): Promise<number[]> {
+  return page.evaluate(
+    async ({ bundle, base64, windows }) => {
+      const url = URL.createObjectURL(new Blob([bundle], { type: "text/javascript" }));
+      const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
+      const mb = (await importModule(url)) as typeof import("mediabunny");
+      URL.revokeObjectURL(url);
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const input = new mb.Input({ source: new mb.BufferSource(bytes.buffer), formats: mb.ALL_FORMATS });
+      const track = await input.getPrimaryAudioTrack();
+      if (!track) return windows.map(() => 0);
+      const sums = windows.map(() => 0);
+      const counts = windows.map(() => 0);
+      for await (const { buffer, timestamp } of new mb.AudioBufferSink(track).buffers()) {
+        const channel = buffer.getChannelData(0);
+        for (let i = 0; i < channel.length; i++) {
+          const t = timestamp + i / buffer.sampleRate;
+          windows.forEach(([from, to], w) => {
+            if (t >= from && t < to) {
+              sums[w]! += channel[i]! ** 2;
+              counts[w]!++;
+            }
+          });
+        }
+      }
+      return sums.map((sum, w) => Math.sqrt(sum / Math.max(1, counts[w]!)));
+    },
+    { bundle: mediabunnyBundle(), base64: readFileSync(file).toString("base64"), windows },
+  );
 }
 
 /**

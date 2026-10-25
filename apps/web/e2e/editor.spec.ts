@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { ensureFixtures, FIXTURES } from "./fixtures";
+import { audioLevels, DIRTY, ensureFixtures, FIXTURES } from "./fixtures";
 
 type Colour = "red" | "green" | "blue" | "black" | "other";
 
@@ -86,6 +86,23 @@ async function stepFrames(page: Page, count: number) {
 async function goToFrame(page: Page, frame: number) {
   await page.keyboard.press("Home");
   await stepFrames(page, frame);
+}
+
+/** Exports the project and returns the downloaded file's path. */
+async function exportVideo(page: Page, name = "export.mp4"): Promise<string> {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("link", { name: "Download MP4" }).click({ timeout: 60_000 });
+  const file = test.info().outputPath(name);
+  await (await downloadPromise).saveAs(file);
+  await page.getByRole("button", { name: "Dismiss export" }).click();
+  return file;
+}
+
+async function setNumber(page: Page, label: string, value: number) {
+  const field = page.getByLabel(`${label} value`);
+  await field.fill(String(value));
+  await field.blur();
 }
 
 // Import and playback
@@ -283,6 +300,74 @@ test("plays animated GIF stickers in a loop", async ({ page }) => {
   await expect.poll(() => colourAt(page)).toBe("blue");
   await goToFrame(page, 31);
   await expect.poll(() => colourAt(page)).toBe("green");
+});
+
+// Audio
+
+test("draws waveforms on clips with sound", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await expect(clips(page, "colors.mp4").locator("canvas[data-waveform]")).toHaveCount(1);
+});
+
+test("fades the sound in", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await setNumber(page, "Fade in", 1);
+  const [start, middle] = await audioLevels(page, await exportVideo(page), [
+    [0, 0.15],
+    [1.5, 2],
+  ]);
+  expect(start!).toBeLessThan(middle! * 0.25);
+  expect(middle!).toBeGreaterThan(0.05);
+});
+
+test("mutes and solos tracks in the export", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("button", { name: "Detach audio" }).click();
+  await page.getByRole("button", { name: "Solo main track" }).click();
+  // The main track's video is silent once its sound is detached, so soloing it silences the export.
+  const [soloedMain] = await audioLevels(page, await exportVideo(page, "solo-main.mp4"), [[0.5, 2.5]]);
+  expect(soloedMain!).toBeLessThan(0.005);
+
+  await page.getByRole("button", { name: "Unsolo main track" }).click();
+  await page.getByRole("button", { name: "Mute audio track" }).click();
+  const [muted] = await audioLevels(page, await exportVideo(page, "muted.mp4"), [[0.5, 2.5]]);
+  expect(muted!).toBeLessThan(0.005);
+
+  await page.getByRole("button", { name: "Unmute audio track" }).click();
+  const [audible] = await audioLevels(page, await exportVideo(page, "audible.mp4"), [[0.5, 2.5]]);
+  expect(audible!).toBeGreaterThan(0.05);
+});
+
+test("cleans up rumble, hum and hiss", async ({ page }) => {
+  // Burst middles and gap middles from the third second of bursts on, once the hiss estimate has settled.
+  const bursts = [6, 6.5, 7].map((t) => [t + 0.08, t + 0.22] as const);
+  const gaps = [6, 6.5, 7].map((t) => [t + 0.35, t + 0.45] as const);
+  const windows = [DIRTY.rumble, DIRTY.hum, ...bursts, ...gaps];
+
+  await addClip(page, FIXTURES.dirty);
+  const before = await audioLevels(page, await exportVideo(page, "dirty.mp4"), windows);
+
+  await setNumber(page, "Reduce hiss", 100);
+  await page.getByRole("radio", { name: "50 Hz" }).click();
+  await page.getByLabel("Cut rumble").check();
+  const after = await audioLevels(page, await exportVideo(page, "clean.mp4"), windows);
+
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+  expect(after[0]!).toBeLessThan(before[0]! * 0.25);
+  expect(after[1]!).toBeLessThan(before[1]! * 0.1);
+  expect(mean(after.slice(2, 5))).toBeGreaterThan(mean(before.slice(2, 5)) * 0.8);
+  expect(mean(after.slice(5))).toBeLessThan(mean(before.slice(5)) * 0.4);
+});
+
+test("records a voiceover onto an audio track", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.keyboard.press("Home");
+  await page.getByRole("button", { name: "Record voiceover" }).click();
+  await expect(page.getByRole("status", { name: "Recording voiceover" })).toBeVisible();
+  await page.waitForTimeout(1_500);
+  await page.getByRole("button", { name: "Stop recording" }).click();
+  await expect(page.getByRole("button", { name: /^Voiceover 1.(webm|m4a),/ })).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Lock audio track" })).toBeVisible();
 });
 
 // Export
