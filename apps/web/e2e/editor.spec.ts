@@ -648,6 +648,78 @@ test("exports transitions and LUTs, drawn in the export worker", async ({ page }
   await expect.poll(() => colourAt(page)).toBe("blue");
 });
 
+// Keyframes and animations
+
+test("animates position with keyframes and eases between them", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await setNumber(page, "Scale", 50);
+  await page.keyboard.press("Home");
+  await page.getByRole("button", { name: "Add Position X keyframe" }).click();
+  await setNumber(page, "Position X", -30);
+  await goToFrame(page, 60);
+  // Once a value has keyframes, changing it elsewhere adds another.
+  await setNumber(page, "Position X", 30);
+  await expect(page.locator("[data-keyframe]")).toHaveCount(2);
+
+  await goToFrame(page, 0);
+  await expect.poll(() => colourAt(page, 0.2, 0.5)).toBe("red");
+  await expect.poll(() => colourAt(page, 0.8, 0.5)).toBe("black");
+  await goToFrame(page, 60);
+  await expect.poll(() => colourAt(page, 0.8, 0.5)).toBe("blue");
+  await expect.poll(() => colourAt(page, 0.2, 0.5)).toBe("black");
+  await goToFrame(page, 30);
+  await expect(page.getByLabel("Position X value")).toHaveValue("0");
+  await expect.poll(() => colourAt(page, 0.5, 0.5)).toBe("green");
+
+  // Hold the first position until the second keyframe arrives.
+  await page.getByRole("button", { name: "Previous keyframe" }).click();
+  await expect(currentTime(page)).toHaveText("00:00:00:00");
+  await page.getByLabel("Easing to next").selectOption("hold");
+  await page.getByLabel("Easing to next").blur();
+  await page.getByRole("button", { name: "Next keyframe" }).click();
+  await expect(currentTime(page)).toHaveText("00:00:02:00");
+  await goToFrame(page, 30);
+  await expect(page.getByLabel("Position X value")).toHaveValue("-30");
+  await expect.poll(() => colourAt(page, 0.2, 0.5)).toBe("green");
+});
+
+test("removing the last keyframe keeps its value", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.keyboard.press("Home");
+  await page.getByRole("button", { name: "Add Opacity keyframe" }).click();
+  await setNumber(page, "Opacity", 40);
+  await page.getByRole("button", { name: "Remove Opacity keyframe" }).click();
+  await expect(page.getByRole("button", { name: "Add Opacity keyframe" })).toBeVisible();
+  await expect(page.locator("[data-keyframe]")).toHaveCount(0);
+  await expect(page.getByLabel("Opacity value")).toHaveValue("40");
+});
+
+test("keyframes volume, and the export follows it", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.keyboard.press("Home");
+  await page.getByRole("button", { name: "Add Volume keyframe" }).click();
+  await page.getByLabel("Easing to next").selectOption("hold");
+  await page.getByLabel("Easing to next").blur();
+  await goToFrame(page, 45);
+  await setNumber(page, "Volume", 0);
+  const [loud, quiet] = await audioLevels(page, await exportVideo(page), [
+    [0.3, 1.2],
+    [1.8, 2.7],
+  ]);
+  expect(loud!).toBeGreaterThan(0.05);
+  expect(quiet!).toBeLessThan(loud! * 0.05);
+});
+
+test("fades a video clip in with an in animation", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByLabel("In", { exact: true }).selectOption("fade");
+  await setNumber(page, "In duration", 1);
+  await page.keyboard.press("Home");
+  await expect.poll(() => colourAt(page)).toBe("black");
+  await goToFrame(page, 45);
+  await expect.poll(() => colourAt(page)).toBe("green");
+});
+
 // Export
 
 test("exports, and the export re-imports with the edited length", async ({ page }) => {
