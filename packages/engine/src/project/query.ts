@@ -1,5 +1,6 @@
 import type { Micros } from "../time";
 import { type Asset, type Clip, type Id, type Project, TEXT_ASSET, TEXT_ASSET_ID, type Track } from "./model";
+import { isSilent } from "./keyframes";
 import { clipContains, clipEnd } from "./timing";
 
 /** Where the last clip on any track ends. */
@@ -89,5 +90,5 @@ export function isStill(project: Project, clip: Clip): boolean {
 
 /** Whether the clip makes sound: a video or audio clip that isn't silenced or frozen. */
 export function isAudible(project: Project, clip: Clip): boolean {
-  return clip.volume > 0 && !isStill(project, clip) && assetOf(project, clip).audio !== undefined;
+  return !isSilent(clip) && !isStill(project, clip) && assetOf(project, clip).audio !== undefined;
 }

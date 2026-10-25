@@ -13,10 +13,13 @@ import {
   type ClipAnimation,
   type ClipTransition,
   type Effect,
+  type Easing,
   type Enhance,
   type Crop,
   IDENTITY_TRANSFORM,
   type Id,
+  type Keyframe,
+  type KeyframeProperty,
   type Mask,
   NEUTRAL_ADJUSTMENTS,
   NO_ENHANCE,
@@ -26,6 +29,15 @@ import {
   type TrackKind,
   type Transform,
 } from "./model";
+import {
+  isKeyframed,
+  keyframeClock,
+  propertyAt,
+  shiftKeyframes,
+  isSilent,
+  transformAt,
+  withoutKeyframes,
+} from "./keyframes";
 import { assetOf, followingClip, isStill, locateClip } from "./query";
 import { clipDuration, clipEnd, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
 
@@ -117,8 +129,9 @@ export function trimClip(project: Project, clipId: Id, edge: Edge, time: Micros)
     let lowest = onMain ? -Infinity : Math.max(0, previousEnd(track, clip));
     if (!still) lowest = Math.max(lowest, toTimelineTime(clip, asset.start));
     const newStart = Math.round(clamp(time, lowest, end - minimum));
+    // A still's keyframe clock starts at its start, so its keyframes shift to stay put.
     next = still
-      ? { ...clip, start: newStart, sourceIn: 0, sourceOut: end - newStart }
+      ? shiftKeyframes({ ...clip, start: newStart, sourceIn: 0, sourceOut: end - newStart }, start - newStart)
       : { ...clip, start: newStart, sourceIn: toSourceTime(clip, newStart) };
   } else {
     let highest = onMain ? Infinity : nextStart(track, clip);
@@ -256,6 +269,9 @@ export function freezeFrame(
     sourceIn: 0,
     sourceOut: duration,
     freezeAt: sourceTimeAt(clip, time),
+    // The frozen picture holds the clip's look at that moment.
+    transform: transformAt(clip, time),
+    keyframes: undefined,
   };
   let pieces: Clip[];
   if (at === clip.start) pieces = [freeze, clip];
@@ -288,12 +304,17 @@ export function detachAudio(project: Project, clipId: Id): DetachResult {
   const found = locateClip(project, clipId);
   if (!found || found.track.locked || found.track.kind !== "video") return { project, audioClipId: null };
   const { clip, trackIndex } = found;
-  if (clip.volume === 0 || isStill(project, clip) || !assetOf(project, clip).audio) {
+  if (isSilent(clip) || isStill(project, clip) || !assetOf(project, clip).audio) {
     return { project, audioClipId: null };
   }
 
-  const audioClip: Clip = { ...clip, id: createId(), transform: IDENTITY_TRANSFORM };
-  const silenced = replaceClip(project, trackIndex, { ...clip, volume: 0 });
+  // Volume keyframes go with the sound; the picture keeps the rest.
+  const audioClip: Clip = {
+    ...withoutKeyframes(clip, ["x", "y", "scale", "rotation", "opacity"]),
+    id: createId(),
+    transform: IDENTITY_TRANSFORM,
+  };
+  const silenced = replaceClip(project, trackIndex, { ...withoutKeyframes(clip, ["volume"]), volume: 0 });
   const free = silenced.tracks.findIndex(
     (track) => track.kind === "audio" && !track.locked && fits(track, audioClip.start, clipEnd(audioClip)),
   );
@@ -394,6 +415,86 @@ export function setTransition(project: Project, clipId: Id, transition: ClipTran
   if (!next) return project;
   const duration = clamp(transition.duration, MIN_TRANSITION, Math.min(clipDuration(clip), clipDuration(next)));
   return replaceClip(project, trackIndex, { ...clip, transition: { ...transition, duration } });
+}
+
+/** Values for keyframable properties, by property. */
+export type PropertyValues = Partial<Record<KeyframeProperty, number>>;
+
+/**
+ * Sets how a clip looks or sounds at `time`. Keyframed properties get a
+ * keyframe there, added or updated; the others change the clip's own
+ * value, so they change for its whole length.
+ */
+export function setValuesAt(project: Project, clipId: Id, time: Micros, values: PropertyValues): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  let clip = found.clip;
+  for (const [property, raw] of Object.entries(values) as [KeyframeProperty, number][]) {
+    const value = clampProperty(property, raw);
+    if (isKeyframed(clip, property)) clip = withKeyframe(project, clip, property, time, value);
+    else if (property === "volume") clip = { ...clip, volume: value };
+    else clip = { ...clip, transform: { ...clip.transform, [property]: value } };
+  }
+  return replaceClip(project, found.trackIndex, clip);
+}
+
+/**
+ * Adds a keyframe at `time` holding the property's current value, or
+ * removes the one already there. When the last one goes, the property stops
+ * changing and keeps that keyframe's value.
+ */
+export function toggleKeyframe(project: Project, clipId: Id, property: KeyframeProperty, time: Micros): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  const existing = keyframeAt(project, clip, property, time);
+  if (!existing) return replaceClip(project, trackIndex, withKeyframe(project, clip, property, time, propertyAt(clip, property, time)));
+
+  const rest = clip.keyframes![property]!.filter((k) => k !== existing);
+  if (rest.length > 0) return replaceClip(project, trackIndex, { ...clip, keyframes: { ...clip.keyframes, [property]: rest } });
+  const still = withoutKeyframes(clip, [property]);
+  const settled =
+    property === "volume" ? { ...still, volume: existing.value } : { ...still, transform: { ...still.transform, [property]: existing.value } };
+  return replaceClip(project, trackIndex, settled);
+}
+
+/** Changes how the value moves from the keyframe at `time` to the next one. */
+export function setKeyframeEasing(project: Project, clipId: Id, property: KeyframeProperty, time: Micros, easing: Easing): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  const existing = keyframeAt(project, clip, property, time);
+  if (!existing) return project;
+  const list = clip.keyframes![property]!.map((k) => (k === existing ? { ...k, easing } : k));
+  return replaceClip(project, trackIndex, { ...clip, keyframes: { ...clip.keyframes, [property]: list } });
+}
+
+/** The keyframe on the playhead, within half a frame either side. */
+export function keyframeAt(project: Project, clip: Clip, property: KeyframeProperty, time: Micros): Keyframe | undefined {
+  const at = clockInside(clip, time);
+  const tolerance = (frameToMicros(1, project.canvas.frameRate) * clip.speed) / 2;
+  return clip.keyframes?.[property]?.find((k) => Math.abs(k.time - at) <= tolerance);
+}
+
+function withKeyframe(project: Project, clip: Clip, property: KeyframeProperty, time: Micros, value: number): Clip {
+  const list = clip.keyframes?.[property] ?? [];
+  const existing = keyframeAt(project, clip, property, time);
+  const next = existing
+    ? list.map((k) => (k === existing ? { ...k, value } : k))
+    : [...list, { time: clockInside(clip, time), value, easing: "linear" as const }].sort((a, b) => a.time - b.time);
+  return { ...clip, keyframes: { ...clip.keyframes, [property]: next } };
+}
+
+/** The keyframe clock at `time`, kept within the clip. */
+function clockInside(clip: Clip, time: Micros): Micros {
+  return keyframeClock(clip, Math.min(Math.max(time, clip.start), clipEnd(clip) - 1));
+}
+
+function clampProperty(property: KeyframeProperty, value: number): number {
+  if (property === "opacity") return clamp(value, 0, 1);
+  if (property === "scale") return Math.max(0.01, value);
+  if (property === "volume") return Math.max(0, value);
+  return value;
 }
 
 /** Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180]. */
@@ -539,7 +640,10 @@ function cutAt(project: Project, clip: Clip, time: Micros): [Clip, Clip] {
   if (isStill(project, clip)) {
     return [
       { ...clip, sourceIn: 0, sourceOut: time - clip.start, fadeOut: 0, transition: undefined },
-      { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time, fadeIn: 0 },
+      shiftKeyframes(
+        { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time, fadeIn: 0 },
+        clip.start - time,
+      ),
     ];
   }
   const cut = toSourceTime(clip, time);

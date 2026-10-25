@@ -139,7 +139,30 @@ export interface Clip {
   enhance?: Enhance;
   /** A transition into the next clip on the same track. Only kept while the two touch. */
   transition?: ClipTransition;
+  /** Values that change over the clip. A property without keyframes uses the clip's own value. */
+  keyframes?: ClipKeyframes;
 }
+
+/** What can be keyframed: the transform's numbers, plus volume. */
+export type KeyframeProperty = "x" | "y" | "scale" | "rotation" | "opacity" | "volume";
+
+/** How a value travels to the next keyframe. "hold" stays put, then jumps when the next one arrives. */
+export type Easing = "linear" | "ease-in" | "ease-out" | "ease-in-out" | "hold";
+
+export interface Keyframe {
+  /**
+   * Source time, measured like `sourceIn`, so keyframes stay with the
+   * footage through trims, splits and speed changes. Stills count from
+   * their start.
+   */
+  time: Micros;
+  value: number;
+  /** How the value moves from this keyframe to the next. */
+  easing: Easing;
+}
+
+/** Keyframes per property, sorted by time. */
+export type ClipKeyframes = Partial<Record<KeyframeProperty, Keyframe[]>>;
 
 /** Colour grading. Every value runs -1 to 1 except vignette (0 to 1); 0 changes nothing. */
 export interface Adjustments {

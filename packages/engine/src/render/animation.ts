@@ -1,4 +1,5 @@
 import type { Clip, Transform } from "../project/model";
+import { transformAt } from "../project/keyframes";
 import { clipDuration } from "../project/timing";
 import type { Micros } from "../time";
 
@@ -12,13 +13,14 @@ export interface AnimatedLook {
 const SLIDE_DISTANCE = 0.08;
 
 /**
- * How a clip looks `time` into the timeline once its animations are
- * applied. In and out animations play over their duration at the clip's
+ * How a clip looks `time` into the timeline once its keyframes and
+ * animations are applied. In and out animations play over their duration at the clip's
  * edges; loops run for the clip's whole length.
  */
 export function animatedLook(clip: Clip, time: Micros): AnimatedLook {
   const animation = clip.animation;
-  const transform = { ...clip.transform };
+  // Keyframes set the base; animations and shake play on top of it.
+  const transform = { ...transformAt(clip, time) };
   let reveal = 1;
   if (!animation) return { transform: shaken(clip, transform, time), reveal };
 
