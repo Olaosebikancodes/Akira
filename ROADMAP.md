@@ -45,12 +45,12 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Text animations
 - [x] Captions typed by hand or imported from `.srt`
 
-## 5. Shader library
+## 5. Shader library ✅
 
-- [ ] Transitions (from gl-transitions, licence-checked)
-- [ ] Adjustments, `.cube` LUTs and effects
-- [ ] Blend modes, masks and chroma key
-- [ ] Enhance: sharpen, denoise, FSR 1 upscale, auto colour, deband/deblock
+- [x] Transitions (from gl-transitions, licence-checked)
+- [x] Adjustments, `.cube` LUTs and effects
+- [x] Blend modes, masks and chroma key
+- [x] Enhance: sharpen, denoise, FSR 1 upscale, auto colour, deband/deblock
 
 ## 6. Keyframes and animations
 
