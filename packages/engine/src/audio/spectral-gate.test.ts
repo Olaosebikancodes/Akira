@@ -56,6 +56,15 @@ describe("SpectralGate", () => {
     expect(rms(output, RATE, RATE * 2)).toBeLessThan(rms(input) * 0.3);
   });
 
+  it("catches up with hiss that starts after digital silence", () => {
+    // A clip that opens in silence: the floor must rise to the hiss, not stay at zero.
+    const input = new Float32Array(RATE * 5);
+    input.set(noise(RATE * 3, 0.1), RATE * 2);
+    const output = gate(input, 1);
+    // Two seconds after the hiss starts, the window has filled with it.
+    expect(rms(output, RATE * 4, RATE * 5)).toBeLessThan(rms(input, RATE * 4, RATE * 5) * 0.3);
+  });
+
   it("keeps speech-like bursts while quieting the gaps between them", () => {
     // 300 ms of tone, 200 ms of gap, repeated, like syllables over room hiss.
     const length = RATE * 3;

@@ -24,7 +24,7 @@ class SpectralGateProcessor extends AudioWorkletProcessor {
     const input = inputs[0];
     const output = outputs[0];
     for (let channel = 0; channel < output.length; channel++) {
-      if (!this.gates[channel]) this.gates[channel] = new Gate(this.strength);
+      if (!this.gates[channel]) this.gates[channel] = new Gate(this.strength, sampleRate);
       const samples = output[channel];
       if (input && input[channel]) samples.set(input[channel]);
       else samples.fill(0);

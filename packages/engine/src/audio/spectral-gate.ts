@@ -4,9 +4,11 @@
  *
  * Audio is cut into overlapping windowed frames and transformed with an FFT.
  * Each frequency bin estimates its noise with "minimum statistics": it
- * lightly smooths its power and follows the quietest level seen recently,
- * which works because hiss is always there while speech and music come and
- * go. The minimum sits below the true average, so it's scaled back up. Gains
+ * lightly smooths its power and takes the quietest level over the last 1.5
+ * seconds, which works because hiss is always there while speech and music
+ * come and go. The window is built from short sub-windows, so the estimate
+ * follows the noise up within 1.5 s when it gets louder. The minimum sits
+ * below the true average, so it's scaled back up. Gains
  * come from spectral subtraction, are limited to a maximum reduction, and
  * are smoothed across neighbouring bins and over time so the result doesn't
  * "warble". The frames are then overlap-added back into audio.
@@ -34,6 +36,12 @@ export class SpectralGate {
   private readonly real: Float32Array;
   private readonly imag: Float32Array;
   private readonly level: Float32Array;
+  /** Quietest level in the sub-window being filled. */
+  private readonly current: Float32Array;
+  /** Quietest level in each finished sub-window, oldest overwritten first. */
+  private readonly history: Float32Array;
+  /** Quietest level across all finished sub-windows. */
+  private readonly past: Float32Array;
   private readonly floor: Float32Array;
   private readonly targets: Float32Array;
   private readonly gains: Float32Array;
@@ -46,10 +54,20 @@ export class SpectralGate {
   private frames = 0;
   /** Samples of finished output not yet handed out. */
   private ready = 0;
+  private readonly subWindows = 15;
+  /** Frames per sub-window: a tenth of a second. */
+  private readonly subWindowFrames: number;
+  private framesInSubWindow = 0;
+  private subWindow = 0;
 
-  constructor(strength: number) {
+  constructor(strength: number, sampleRate = 48_000) {
     const size = this.size;
+    const bins = size / 2 + 1;
     this.strength = strength;
+    this.subWindowFrames = Math.max(1, Math.round((0.1 * sampleRate) / this.hop));
+    this.current = new Float32Array(bins).fill(Number.POSITIVE_INFINITY);
+    this.history = new Float32Array(bins * this.subWindows).fill(Number.POSITIVE_INFINITY);
+    this.past = new Float32Array(bins).fill(Number.POSITIVE_INFINITY);
     this.window = new Float32Array(size);
     // A periodic Hann window at 75% overlap sums to a constant, so analysis and resynthesis are lossless.
     for (let i = 0; i < size; i++) this.window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / size);
@@ -107,13 +125,12 @@ export class SpectralGate {
     this.frames++;
 
     const bins = size / 2 + 1;
-    const { level, floor, targets, gains } = this;
-    // The floor falls instantly to quieter levels and rises about 2 dB a
-    // second, so a held note is never mistaken for noise.
-    const rise = 1.0025;
-    // Minimum-statistics bias: measured on white noise, the tracked minimum
-    // sits at about 15% of the true noise power, so scale it back up.
-    const bias = 6.5;
+    const { level, current, past, floor, targets, gains } = this;
+    // Minimum-statistics bias: measured against the exact power of white
+    // noise, the windowed minimum sits at about 11% of it, so scale it back up.
+    const bias = 9;
+    // The first frames still hold the zeros the buffer started with; they'd drag the floor to nothing.
+    const tracking = this.frames > this.size / this.hop + 4;
     // Stronger settings subtract more and allow deeper cuts (up to 24 dB).
     const oversubtract = 1 + 2 * this.strength;
     const deepest = Math.pow(10, (-24 * this.strength) / 20);
@@ -125,9 +142,9 @@ export class SpectralGate {
       // the gate; a light average steadies it while still recovering within
       // the short pauses between words.
       level[bin] = first ? power : 0.5 * level[bin]! + 0.5 * power;
-      // The first frames still hold the zeros the buffer started with; they'd drag the floor to nothing.
-      if (this.frames > this.size / this.hop + 4) {
-        floor[bin] = Math.max(1e-12, Math.min(level[bin]!, floor[bin]! * rise));
+      if (tracking) {
+        current[bin] = Math.min(current[bin]!, level[bin]!);
+        floor[bin] = Math.max(1e-12, Math.min(current[bin]!, past[bin]!));
       }
       const noise = floor[bin]! * bias;
       targets[bin] =
@@ -135,6 +152,8 @@ export class SpectralGate {
           ? Math.max(deepest, 1 - (oversubtract * noise) / Math.max(level[bin]!, 1e-12))
           : 1;
     }
+
+    if (tracking && ++this.framesInSubWindow === this.subWindowFrames) this.closeSubWindow(bins);
 
     for (let bin = 0; bin < bins; bin++) {
       // Blending with neighbours stops isolated bins flickering on and off.
@@ -160,6 +179,23 @@ export class SpectralGate {
     output.fill(0, size - hop);
     for (let i = 0; i < size; i++) output[i] = output[i]! + (real[i]! * window[i]!) / 1.5;
     input.copyWithin(0, hop);
+  }
+
+  /** Files the finished sub-window's minimums and drops the oldest from the window. */
+  private closeSubWindow(bins: number): void {
+    const { current, history, past } = this;
+    const offset = this.subWindow * bins;
+    for (let bin = 0; bin < bins; bin++) {
+      history[offset + bin] = current[bin]!;
+      current[bin] = Number.POSITIVE_INFINITY;
+      let lowest = Number.POSITIVE_INFINITY;
+      for (let window = 0; window < this.subWindows; window++) {
+        lowest = Math.min(lowest, history[window * bins + bin]!);
+      }
+      past[bin] = lowest;
+    }
+    this.subWindow = (this.subWindow + 1) % this.subWindows;
+    this.framesInSubWindow = 0;
   }
 
   /** In-place radix-2 FFT of `real` + i·`imag`; the inverse is scaled by 1/n. */
