@@ -1,10 +1,9 @@
 import { type AudibleClip, audibleClips, clipAudio, playPlacedBuffer } from "../audio/schedule";
 import type { MediaFiles } from "../media/media-file";
-import { projectDuration } from "../project/query";
 import type { Project } from "../project/model";
-import { Compositor } from "../render/compositor";
-import { FrameRenderer } from "../render/frame-renderer";
+import { projectDuration } from "../project/query";
 import { type FrameRate, type Micros, microsToSeconds, secondsToMicros } from "../time";
+import { type ClockAnchor, LocalVideoOutput, type VideoOutput, WorkerVideoOutput, wallClock } from "./video-output";
 
 /** How far ahead of the playhead audio is decoded and scheduled. */
 const AUDIO_LOOKAHEAD: Micros = 1_000_000;
@@ -18,6 +17,14 @@ export interface PlayerEvents {
   onError?(error: unknown): void;
 }
 
+export interface PlayerOptions {
+  /**
+   * A worker running `serveRenderWorker`. When given, and the browser can
+   * hand canvases to workers, video renders there instead of on the main thread.
+   */
+  renderWorker?: Worker;
+}
+
 /**
  * Plays a project into a canvas with sound.
  *
@@ -27,8 +34,7 @@ export interface PlayerEvents {
  * drift away from the sound.
  */
 export class Player {
-  private readonly renderer: FrameRenderer;
-  private readonly compositor: Compositor;
+  private readonly video: VideoOutput;
   private audioContext: AudioContext | null = null;
 
   private time: Micros = 0;
@@ -38,19 +44,19 @@ export class Player {
   private animationFrame = 0;
   private audioSession: AudioSession | null = null;
 
-  private drawing = false;
-  private pendingDraw: Micros | null = null;
-
   constructor(
     canvas: HTMLCanvasElement,
     private project: Project,
     private files: MediaFiles,
     private readonly events: PlayerEvents = {},
+    options: PlayerOptions = {},
   ) {
-    this.compositor = new Compositor(canvas);
-    this.compositor.resize(project.canvas.width, project.canvas.height);
-    this.renderer = new FrameRenderer(this.compositor);
-    this.requestDraw(0);
+    const onError = (error: unknown) => this.events.onError?.(error);
+    this.video =
+      options.renderWorker && "transferControlToOffscreen" in canvas
+        ? new WorkerVideoOutput(options.renderWorker, canvas, project, files, onError)
+        : new LocalVideoOutput(canvas, project, files, onError);
+    this.video.show(0);
   }
 
   get currentTime(): Micros {
@@ -72,11 +78,7 @@ export class Player {
   setProject(project: Project, files: MediaFiles): void {
     this.project = project;
     this.files = files;
-    const { width, height } = project.canvas;
-    if (this.compositor.width !== width || this.compositor.height !== height) {
-      this.compositor.resize(width, height);
-    }
-    void this.renderer.prune(project);
+    this.video.setProject(project, files);
     this.seek(Math.min(this.time, this.duration));
   }
 
@@ -90,6 +92,7 @@ export class Player {
 
     this.playing = true;
     this.startAudio(this.time);
+    this.video.playing(this.anchor(), true);
     this.events.onPlayingChange?.(true);
     this.animationFrame = requestAnimationFrame(this.tick);
   }
@@ -98,21 +101,24 @@ export class Player {
     if (!this.playing) return;
     this.time = Math.min(this.clock(), this.duration);
     this.stop();
-    this.requestDraw(this.time);
+    this.video.show(this.time);
     this.events.onTimeUpdate?.(this.time);
   }
 
   seek(time: Micros): void {
     this.time = Math.max(0, Math.min(time, this.duration));
-    if (this.playing) this.startAudio(this.time);
-    this.requestDraw(this.time);
+    if (this.playing) {
+      this.startAudio(this.time);
+      this.video.playing(this.anchor(), true);
+    } else {
+      this.video.show(this.time);
+    }
     this.events.onTimeUpdate?.(this.time);
   }
 
   async dispose(): Promise<void> {
     if (this.playing) this.stop();
-    await this.renderer.close();
-    this.compositor.dispose();
+    await this.video.dispose();
     await this.audioContext?.close();
   }
 
@@ -132,7 +138,7 @@ export class Player {
       return;
     }
     this.time = time;
-    this.requestDraw(time);
+    this.video.playing(this.anchor(time), false);
     this.events.onTimeUpdate?.(time);
     this.animationFrame = requestAnimationFrame(this.tick);
   };
@@ -158,25 +164,9 @@ export class Player {
     return Math.max(heard, this.audioSession?.from ?? 0);
   }
 
-  /** Draws the latest requested time, skipping any requested in the meantime. */
-  private requestDraw(time: Micros): void {
-    // Clips end exclusively, so at the very end show the last frame, not black.
-    this.pendingDraw = Math.min(time, Math.max(0, this.duration - 1));
-    if (this.drawing) return;
-    this.drawing = true;
-    void (async () => {
-      try {
-        while (this.pendingDraw !== null) {
-          const next = this.pendingDraw;
-          this.pendingDraw = null;
-          await this.renderer.render(this.project, this.files, next);
-        }
-      } catch (error) {
-        this.events.onError?.(error);
-      } finally {
-        this.drawing = false;
-      }
-    })();
+  /** Pins the heard time to the wall clock so a worker can extrapolate it between syncs. */
+  private anchor(time: Micros = this.clock()): ClockAnchor {
+    return { time, at: wallClock(), from: this.audioSession?.from ?? time };
   }
 }
 

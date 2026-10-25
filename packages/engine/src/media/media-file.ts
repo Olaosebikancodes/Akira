@@ -44,6 +44,8 @@ const CODEC_NAMES: Record<string, string> = {
  */
 export class MediaFile {
   private constructor(
+    /** The original file, so a worker can open its own copy. */
+    readonly file: File,
     private readonly input: Input | null,
     readonly info: MediaInfo,
     readonly video: VideoSampleSink | null,
@@ -57,7 +59,7 @@ export class MediaFile {
     if (file.type.startsWith("image/")) return MediaFile.openImage(file);
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
     try {
-      return await MediaFile.probe(input, file.name);
+      return await MediaFile.probe(input, file);
     } catch (error) {
       input.dispose();
       throw error;
@@ -83,10 +85,11 @@ export class MediaFile {
       duration: image.duration,
       image: { width: image.width, height: image.height, animated: image.animated },
     };
-    return new MediaFile(null, info, null, null, [], image);
+    return new MediaFile(file, null, info, null, null, [], image);
   }
 
-  private static async probe(input: Input, name: string): Promise<MediaFile> {
+  private static async probe(input: Input, file: File): Promise<MediaFile> {
+    const { name } = file;
     if (!(await input.canRead())) {
       throw new UnsupportedMediaError(
         `${name} isn't a video or audio format Akira can read.`,
@@ -145,6 +148,7 @@ export class MediaFile {
     }
 
     return new MediaFile(
+      file,
       input,
       info,
       videoTrack && new VideoSampleSink(videoTrack),

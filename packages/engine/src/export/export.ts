@@ -1,5 +1,6 @@
 import {
-  AudioBufferSource,
+  AudioSample,
+  AudioSampleSource,
   BufferTarget,
   CanvasSource,
   getFirstEncodableAudioCodec,
@@ -10,6 +11,7 @@ import {
   type QualityLevel,
 } from "mediabunny";
 import { MIX_CHANNELS, MIX_SAMPLE_RATE, renderAudioMix } from "../audio/mix";
+import { audioBufferToPcm, type PcmAudio, planar } from "../audio/pcm";
 import { audibleClips } from "../audio/schedule";
 import type { MediaFiles } from "../media/media-file";
 import { projectDuration } from "../project/query";
@@ -24,6 +26,12 @@ export interface ExportOptions {
   /** Called after each video frame with progress from 0 to 1. */
   onProgress?: (progress: number) => void;
   signal?: AbortSignal;
+  /**
+   * The project's audio, already mixed, or null for none. Workers have to
+   * pass this in because OfflineAudioContext only exists on the main thread;
+   * when it's left out the mix is rendered here.
+   */
+  audio?: PcmAudio | null;
 }
 
 export class ExportCancelledError extends Error {
@@ -56,7 +64,7 @@ export async function exportProject(
     throw new Error(`This browser can't encode H.264 video at ${width}×${height}.`);
   }
 
-  const hasAudio = audibleClips(project, files).length > 0;
+  const hasAudio = options.audio !== undefined ? options.audio !== null : audibleClips(project, files).length > 0;
   const audioCodec = hasAudio
     ? await getFirstEncodableAudioCodec(["aac", "opus"], {
         numberOfChannels: MIX_CHANNELS,
@@ -76,7 +84,7 @@ export async function exportProject(
   });
   const videoSource = new CanvasSource(canvas, { codec: videoCodec, quality });
   output.addVideoTrack(videoSource, { frameRate: fps });
-  const audioSource = audioCodec && new AudioBufferSource({ codec: audioCodec, quality });
+  const audioSource = audioCodec && new AudioSampleSource({ codec: audioCodec, quality });
   if (audioSource) output.addAudioTrack(audioSource);
 
   const throwIfCancelled = () => {
@@ -85,9 +93,17 @@ export async function exportProject(
 
   const encodeAudio = async () => {
     if (!audioSource) return;
-    const mix = await renderAudioMix(project, files, duration);
+    const mix = options.audio ?? audioBufferToPcm(await renderAudioMix(project, files, duration));
     throwIfCancelled();
-    await audioSource.add(mix);
+    const sample = new AudioSample({
+      data: planar(mix),
+      format: "f32-planar",
+      numberOfChannels: mix.channels.length,
+      sampleRate: mix.sampleRate,
+      timestamp: 0,
+    });
+    await audioSource.add(sample);
+    sample.close();
     audioSource.close();
   };
 
