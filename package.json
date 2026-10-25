@@ -1,0 +1,20 @@
+{
+  "name": "akira",
+  "private": true,
+  "description": "A high-quality video editor that runs in your browser. No AI, no uploads: everything renders on your own GPU.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @akira/web",
+    "build": "npm run build -w @akira/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

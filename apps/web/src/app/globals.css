@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --background: oklch(98.5% 0.004 260);
+  --foreground: oklch(21% 0.012 260);
+  --muted: oklch(50% 0.012 260);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(16% 0.01 260);
+    --foreground: oklch(94% 0.006 260);
+    --muted: oklch(68% 0.012 260);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
