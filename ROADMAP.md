@@ -39,11 +39,11 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Voiceover recording
 - [x] Noise reduction (classic filters for hiss, hum and rumble)
 
-## 4. Text
+## 4. Text ✅
 
-- [ ] Text clips: fonts (including your own), colour, stroke, shadow, background
-- [ ] Text animations
-- [ ] Captions typed by hand or imported from `.srt`
+- [x] Text clips: fonts (including your own), colour, stroke, shadow, background
+- [x] Text animations
+- [x] Captions typed by hand or imported from `.srt`
 
 ## 5. Shader library
 
