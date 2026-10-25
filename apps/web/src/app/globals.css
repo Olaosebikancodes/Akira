@@ -1,46 +1,130 @@
 @import "tailwindcss";
 
+/*
+ * Akira is dark-only, like every serious editor: a light interface skews how
+ * footage colour is judged. Radii: panels 8px, controls 6px, timeline clips 4px.
+ */
 :root {
-  --background: oklch(98.5% 0.004 260);
-  --foreground: oklch(21% 0.012 260);
-  --muted: oklch(50% 0.012 260);
-  --surface: oklch(95.5% 0.005 260);
-  --border: oklch(89% 0.008 260);
-  --stage: oklch(14% 0.008 260);
-  --accent: oklch(57% 0.2 27);
+  color-scheme: dark;
+
+  --background: oklch(14.5% 0.006 260);
+  --panel: oklch(18% 0.007 260);
+  --raised: oklch(22.5% 0.008 260);
+  --raised-hover: oklch(26% 0.009 260);
+  --control-on: oklch(30% 0.01 260);
+  --stage: oklch(10.5% 0.005 260);
+  --lane-main: oklch(16.5% 0.007 260);
+  --border: oklch(100% 0 0 / 0.07);
+  --border-strong: oklch(100% 0 0 / 0.13);
+  --foreground: oklch(94% 0.005 260);
+  --muted: oklch(70% 0.01 260);
+  --subtle: oklch(55% 0.01 260);
+  --ring: oklch(82% 0.07 250);
+
+  /* Akira red: the playhead and the one primary action. */
+  --accent: oklch(64% 0.2 27);
   --accent-foreground: oklch(98% 0.01 27);
-  --danger: oklch(55% 0.19 27);
+  --accent-hover: oklch(68% 0.2 27);
+  --danger: oklch(72% 0.16 27);
+  --warning: oklch(82% 0.13 80);
+
+  /* Clip colours tell kinds apart at a glance. */
+  --clip-video: oklch(40% 0.06 240);
+  --clip-image: oklch(42% 0.06 195);
+  --clip-audio: oklch(42% 0.07 155);
+  --clip-freeze: oklch(52% 0.05 230);
+  --clip-selected: oklch(96% 0.01 260);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-raised-hover: var(--raised-hover);
+  --color-control-on: var(--control-on);
+  --color-stage: var(--stage);
+  --color-lane-main: var(--lane-main);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
-  --color-surface: var(--surface);
-  --color-border: var(--border);
-  --color-stage: var(--stage);
+  --color-subtle: var(--subtle);
+  --color-ring: var(--ring);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
   --color-danger: var(--danger);
+  --color-warning: var(--warning);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(16% 0.01 260);
-    --foreground: oklch(94% 0.006 260);
-    --muted: oklch(68% 0.012 260);
-    --surface: oklch(20.5% 0.011 260);
-    --border: oklch(29% 0.012 260);
-    --stage: oklch(11% 0.008 260);
-    --accent: oklch(64% 0.2 27);
-    --danger: oklch(70% 0.17 27);
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: fine) {
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+/* Pressable controls dip slightly, so a click feels received. */
+.press {
+  transition: transform 140ms var(--ease-out), background-color 140ms ease, color 140ms ease;
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press {
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* Native range inputs restyled to match the panels. */
+input[type="range"].slider {
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+input[type="range"].slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+input[type="range"].slider::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+input[type="range"].slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+input[type="range"].slider:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
