@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { clipGainAt, gainEnvelope } from "../audio/envelope";
 import { animatedLook } from "../render/animation";
-import { detachAudio, freezeFrame, setClipSpeed, setKeyframeEasing, setValuesAt, splitClip, toggleKeyframe, trimClip } from "./edit";
+import { clearKeyframes, detachAudio, freezeFrame, setClipSpeed, setKeyframeEasing, setValuesAt, splitClip, toggleKeyframe, trimClip } from "./edit";
 import { clip, IMAGE, projectWith, VIDEO } from "./fixtures.test-util";
-import { ease, interpolate, isSilent, keyframeTimelineTime, propertyAt, transformAt } from "./keyframes";
+import { ease, interpolate, isSilent, keyframeTimelineTime, keyframeTimes, propertyAt, transformAt } from "./keyframes";
 import type { Easing, Keyframe, Project } from "./model";
 import { findClip, isAudible } from "./query";
 
@@ -198,5 +198,18 @@ describe("freezeFrame", () => {
     const frozen = findClip(project, freezeId!)!;
     expect(frozen.keyframes).toBeUndefined();
     expect(frozen.transform.x).toBe(0.5);
+  });
+});
+
+describe("clearKeyframes", () => {
+  it("keeps the values the clip has at the playhead", () => {
+    const a = findClip(clearKeyframes(moving(), "a", ["x"], 3 * S), "a")!;
+    expect(a.keyframes).toBeUndefined();
+    expect(a.transform.x).toBe(0.5);
+  });
+
+  it("lists keyframes on the timeline once each", () => {
+    const project = toggleKeyframe(moving(), "a", "opacity", 2 * S);
+    expect(keyframeTimes(findClip(project, "a")!)).toEqual([2 * S, 4 * S]);
   });
 });

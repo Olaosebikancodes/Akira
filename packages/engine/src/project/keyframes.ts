@@ -77,6 +77,13 @@ export function volumeAt(clip: Clip, time: Micros): number {
   return propertyAt(clip, "volume", time);
 }
 
+/** Where the clip's keyframes sit on the timeline, across all properties, earliest first. */
+export function keyframeTimes(clip: Clip): Micros[] {
+  if (!clip.keyframes) return [];
+  const times = Object.values(clip.keyframes).flatMap((list) => list.map((k) => keyframeTimelineTime(clip, k)));
+  return [...new Set(times)].sort((a, b) => a - b);
+}
+
 /** Whether the clip is silent all the way through. */
 export function isSilent(clip: Clip): boolean {
   const keyframes = clip.keyframes?.volume;

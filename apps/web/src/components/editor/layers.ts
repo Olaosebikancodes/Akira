@@ -8,6 +8,7 @@ import {
   measureText,
   type Micros,
   type Project,
+  transformAt,
 } from "@akira/engine";
 
 /** Size of an asset's picture as displayed; null for audio. */
@@ -41,7 +42,8 @@ export function visibleLayers(project: Project, time: Micros): VisibleLayer[] {
         // The file's own rotation is already in the display size; it only affects sampling.
         rotation: 0,
         flip: false,
-        transform: clip.transform,
+        // Keyframed values as they are now; in, out and loop animations are left out.
+        transform: transformAt(clip, time),
         crop: clip.crop,
         canvasWidth: width,
         canvasHeight: height,

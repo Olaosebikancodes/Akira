@@ -1,6 +1,6 @@
 "use client";
 
-import { type Clip, type Point, pointInQuad, updateClipLook } from "@akira/engine";
+import { type Clip, type Point, pointInQuad, setValuesAt, transformAt } from "@akira/engine";
 import { type PointerEvent, useState } from "react";
 import { visibleLayers } from "./layers";
 import { beginGesture, endGesture, requestTextFocus, select, updateGesture, useEditor } from "./store";
@@ -65,27 +65,29 @@ export function CanvasOverlay({ scale }: { scale: number }) {
     if (!drag) return;
     const point = toCanvas(event);
     const { clip } = drag;
+    // Drag from the values at the playhead; keyframed ones get a keyframe there.
+    const base = transformAt(clip, time);
 
     if (drag.kind === "move") {
-      let x = clip.transform.x + (point[0] - drag.from[0]) / width;
-      let y = clip.transform.y + (point[1] - drag.from[1]) / height;
+      let x = base.x + (point[0] - drag.from[0]) / width;
+      let y = base.y + (point[1] - drag.from[1]) / height;
       const snapX = Math.abs(x) < CENTRE_SNAP;
       const snapY = Math.abs(y) < CENTRE_SNAP;
       if (snapX) x = 0;
       if (snapY) y = 0;
       setGuides({ x: snapX, y: snapY });
-      updateGesture((project) => updateClipLook(project, clip.id, { transform: { x, y } }));
+      updateGesture((project) => setValuesAt(project, clip.id, time, { x, y }));
     } else if (drag.kind === "scale") {
       const ratio = distance(point, drag.centre) / Math.max(1, distance(drag.from, drag.centre));
-      const scaleValue = Math.min(20, Math.max(0.02, clip.transform.scale * ratio));
-      updateGesture((project) => updateClipLook(project, clip.id, { transform: { scale: scaleValue } }));
+      const scaleValue = Math.min(20, Math.max(0.02, base.scale * ratio));
+      updateGesture((project) => setValuesAt(project, clip.id, time, { scale: scaleValue }));
     } else {
       const turned = angle(drag.centre, point) - angle(drag.centre, drag.from);
-      let rotation = normalise(clip.transform.rotation + turned);
+      let rotation = normalise(base.rotation + turned);
       const step = event.shiftKey ? 15 : 90;
       const nearest = Math.round(rotation / step) * step;
       if (event.shiftKey || Math.abs(rotation - nearest) < ROTATION_SNAP_DEGREES) rotation = normalise(nearest);
-      updateGesture((project) => updateClipLook(project, clip.id, { transform: { rotation } }));
+      updateGesture((project) => setValuesAt(project, clip.id, time, { rotation }));
     }
   }
 

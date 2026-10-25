@@ -5,6 +5,7 @@ import {
   assetOf,
   type Background,
   type Clip,
+  clearKeyframes,
   currentAspect,
   FPS_23_976,
   FPS_24,
@@ -17,25 +18,32 @@ import {
   flipClip,
   IDENTITY_TRANSFORM,
   isStill,
+  type KeyframeProperty,
   locateClip,
   MAX_SPEED,
   MIN_SPEED,
   NO_CROP,
+  type Micros,
   type Project,
+  type PropertyValues,
   rotateClip90,
   setAspect,
   setAudioFilters,
   setClipFades,
   setClipSpeed,
+  setValuesAt,
   clipDuration,
   microsToSeconds,
   secondsToMicros,
+  transformAt,
   updateClipLook,
+  volumeAt,
 } from "@akira/engine";
 import { ArrowClockwiseIcon, FlipHorizontalIcon, FlipVerticalIcon } from "@phosphor-icons/react";
 import { useId, useState } from "react";
 import { ColourTab, EffectsTab, EnhanceTab, TransitionSection } from "./inspector-look";
 import { AnimationSection, TextSections } from "./inspector-text";
+import { KeyframeButton, KeyframesSection } from "./keyframe-controls";
 import { commit, endGesture, liveEdit, useEditor } from "./store";
 import { Button, focusRing, IconButton, Section, Segmented, SliderField, Tabs } from "./ui";
 
@@ -53,6 +61,8 @@ const FRAME_RATES = [
 const live = liveEdit;
 
 type ClipTab = "basic" | "colour" | "effects" | "enhance";
+
+const TRANSFORM_PROPERTIES: readonly KeyframeProperty[] = ["x", "y", "scale", "rotation", "opacity"];
 
 export function Inspector() {
   const selection = useEditor((s) => s.selection);
@@ -103,10 +113,17 @@ function ClipInspector({
   tab: ClipTab;
   onTab: (tab: ClipTab) => void;
 }) {
+  const time = useEditor((s) => s.time);
   const asset = assetOf(project, clip);
   const still = isStill(project, clip);
-  const { transform, crop } = clip;
+  // Values as they are at the playhead, so keyframed ones read right.
+  const transform = transformAt(clip, time);
+  const { crop } = clip;
   const look = (change: Parameters<typeof updateClipLook>[2]) => live((p) => updateClipLook(p, clip.id, change));
+  const at = (values: PropertyValues) => live((p) => setValuesAt(p, clip.id, time, values));
+  const key = (property: KeyframeProperty, label: string) => (
+    <KeyframeButton project={project} clip={clip} property={property} label={label} time={time} />
+  );
 
   if (locked) {
     return <p className="px-4 py-4 text-xs text-muted">This clip is on a locked track. Unlock the track to edit it.</p>;
@@ -121,20 +138,28 @@ function ClipInspector({
           title="Transform"
           action={
             <div className="flex">
-              <IconButton icon={ArrowClockwiseIcon} label="Rotate 90°" onClick={() => commit((p) => rotateClip90(p, clip.id))} />
+              <IconButton icon={ArrowClockwiseIcon} label="Rotate 90°" onClick={() => commit((p) => rotateClip90(p, clip.id, time))} />
               <IconButton icon={FlipHorizontalIcon} label="Flip horizontally" onClick={() => commit((p) => flipClip(p, clip.id, "x"))} active={transform.flipX} />
               <IconButton icon={FlipVerticalIcon} label="Flip vertically" onClick={() => commit((p) => flipClip(p, clip.id, "y"))} active={transform.flipY} />
             </div>
           }
         >
-          <SliderField label="Position X" unit="%" value={transform.x * 100} min={-100} max={100} step={0.5} onChange={(v) => look({ transform: { x: v / 100 } })} onCommit={endGesture} />
-          <SliderField label="Position Y" unit="%" value={transform.y * 100} min={-100} max={100} step={0.5} onChange={(v) => look({ transform: { y: v / 100 } })} onCommit={endGesture} />
-          <SliderField label="Scale" unit="%" value={transform.scale * 100} min={5} max={400} step={1} onChange={(v) => look({ transform: { scale: v / 100 } })} onCommit={endGesture} />
-          <SliderField label="Rotation" unit="°" value={transform.rotation} min={-180} max={180} step={1} onChange={(v) => look({ transform: { rotation: v } })} onCommit={endGesture} />
-          <SliderField label="Opacity" unit="%" value={transform.opacity * 100} min={0} max={100} step={1} onChange={(v) => look({ transform: { opacity: v / 100 } })} onCommit={endGesture} />
-          <Button onClick={() => commit((p) => updateClipLook(p, clip.id, { transform: IDENTITY_TRANSFORM }))}>Reset transform</Button>
+          <SliderField label="Position X" unit="%" value={transform.x * 100} min={-100} max={100} step={0.5} onChange={(v) => at({ x: v / 100 })} onCommit={endGesture} adornment={key("x", "Position X")} />
+          <SliderField label="Position Y" unit="%" value={transform.y * 100} min={-100} max={100} step={0.5} onChange={(v) => at({ y: v / 100 })} onCommit={endGesture} adornment={key("y", "Position Y")} />
+          <SliderField label="Scale" unit="%" value={transform.scale * 100} min={5} max={400} step={1} onChange={(v) => at({ scale: v / 100 })} onCommit={endGesture} adornment={key("scale", "Scale")} />
+          <SliderField label="Rotation" unit="°" value={transform.rotation} min={-180} max={180} step={1} onChange={(v) => at({ rotation: v })} onCommit={endGesture} adornment={key("rotation", "Rotation")} />
+          <SliderField label="Opacity" unit="%" value={transform.opacity * 100} min={0} max={100} step={1} onChange={(v) => at({ opacity: v / 100 })} onCommit={endGesture} adornment={key("opacity", "Opacity")} />
+          <Button
+            onClick={() =>
+              commit((p) => updateClipLook(clearKeyframes(p, clip.id, TRANSFORM_PROPERTIES, time), clip.id, { transform: IDENTITY_TRANSFORM }))
+            }
+          >
+            Reset transform
+          </Button>
         </Section>
       )}
+
+      {(isVisual || (!still && asset.audio)) && <KeyframesSection project={project} clip={clip} time={time} />}
 
       {isVisual && !clip.text && (
         <Section title="Crop">
@@ -171,7 +196,7 @@ function ClipInspector({
         </Section>
       )}
 
-      {!still && asset.audio && <AudioSection clip={clip} />}
+      {!still && asset.audio && <AudioSection project={project} clip={clip} time={time} />}
     </div>
   );
 
@@ -195,7 +220,7 @@ function ClipInspector({
   );
 }
 
-function AudioSection({ clip }: { clip: Clip }) {
+function AudioSection({ project, clip, time }: { project: Project; clip: Clip; time: Micros }) {
   const longest = Math.min(10, microsToSeconds(clipDuration(clip)));
   const { denoise, hum, rumble } = clip.audioFilters;
   const rumbleId = useId();
@@ -206,12 +231,13 @@ function AudioSection({ clip }: { clip: Clip }) {
         <SliderField
           label="Volume"
           unit="%"
-          value={clip.volume * 100}
+          value={volumeAt(clip, time) * 100}
           min={0}
           max={200}
           step={1}
-          onChange={(v) => live((p) => updateClipLook(p, clip.id, { volume: v / 100 }))}
+          onChange={(v) => live((p) => setValuesAt(p, clip.id, time, { volume: v / 100 }))}
           onCommit={endGesture}
+          adornment={<KeyframeButton project={project} clip={clip} property="volume" label="Volume" time={time} />}
         />
         <SliderField
           label="Fade in"

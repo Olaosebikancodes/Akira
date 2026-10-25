@@ -76,6 +76,7 @@ export function SliderField({
   onChange,
   onCommit,
   disabled,
+  adornment,
 }: {
   label: string;
   value: number;
@@ -88,6 +89,8 @@ export function SliderField({
   /** Fires once when a drag or typed edit finishes. */
   onCommit?: () => void;
   disabled?: boolean;
+  /** A small control shown before the number, such as a keyframe toggle. */
+  adornment?: ReactNode;
 }) {
   const id = useId();
   const clamp = (n: number) => Math.min(max, Math.max(min, n));
@@ -97,6 +100,7 @@ export function SliderField({
         {label}
       </label>
       <div className="flex items-center gap-1">
+        {adornment}
         <input
           type="number"
           aria-label={`${label} value`}

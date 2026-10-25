@@ -10,6 +10,8 @@ import {
   formatTimecode,
   FPS_30,
   type Id,
+  isSilent,
+  keyframeTimes,
   peakBetween,
   sourceTimeAt,
   type Thumbnail,
@@ -51,7 +53,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
           ? "var(--clip-image)"
           : "var(--clip-video)";
   const rate = asset.video?.frameRate ?? FPS_30;
-  const silent = clip.volume === 0 && asset.audio !== undefined && !frozen;
+  const silent = isSilent(clip) && asset.audio !== undefined && !frozen;
   const clipHeight = height - 9;
   // Audio clips are all waveform; video clips with sound get a strip along the bottom.
   const waveHeight = asset.kind === "audio" ? clipHeight : Math.round(clipHeight * 0.32);
@@ -81,6 +83,17 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
         {clip.speed !== 1 && <span className="shrink-0 rounded bg-black/50 px-1 font-mono text-[10px]">{clip.speed}×</span>}
       </span>
       {selected && <span aria-hidden className="pointer-events-none absolute inset-0 rounded border-2 border-[var(--clip-selected)]" />}
+      {selected &&
+        keyframeTimes(clip).map((time) => (
+          // Where the selected clip's keyframes are; the inspector jumps between them.
+          <span
+            key={time}
+            aria-hidden
+            data-keyframe
+            className="pointer-events-none absolute bottom-1 size-2 -translate-x-1/2 rotate-45 border border-black/60 bg-[var(--clip-selected)]"
+            style={{ left: timeToX(time - clip.start, zoom) }}
+          />
+        ))}
       {!locked && (
         <>
           <span

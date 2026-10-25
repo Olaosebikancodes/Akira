@@ -458,6 +458,20 @@ export function toggleKeyframe(project: Project, clipId: Id, property: KeyframeP
   return replaceClip(project, trackIndex, settled);
 }
 
+/** Stops properties changing over the clip, keeping the values they have at `time`. */
+export function clearKeyframes(project: Project, clipId: Id, properties: readonly KeyframeProperty[], time: Micros): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || !found.clip.keyframes) return project;
+  let clip = found.clip;
+  for (const property of properties) {
+    if (!isKeyframed(clip, property)) continue;
+    const value = propertyAt(clip, property, time);
+    clip = withoutKeyframes(clip, [property]);
+    clip = property === "volume" ? { ...clip, volume: value } : { ...clip, transform: { ...clip.transform, [property]: value } };
+  }
+  return replaceClip(project, found.trackIndex, clip);
+}
+
 /** Changes how the value moves from the keyframe at `time` to the next one. */
 export function setKeyframeEasing(project: Project, clipId: Id, property: KeyframeProperty, time: Micros, easing: Easing): Project {
   const found = locateClip(project, clipId);
@@ -497,11 +511,15 @@ function clampProperty(property: KeyframeProperty, value: number): number {
   return value;
 }
 
-/** Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180]. */
-export function rotateClip90(project: Project, clipId: Id): Project {
+/**
+ * Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180].
+ * If its rotation is keyframed, this sets a keyframe at `time`.
+ */
+export function rotateClip90(project: Project, clipId: Id, time?: Micros): Project {
   const clip = locateClip(project, clipId)?.clip;
   if (!clip) return project;
-  return updateClipLook(project, clipId, { transform: { rotation: normalizeAngle(clip.transform.rotation + 90) } });
+  const at = time ?? clip.start;
+  return setValuesAt(project, clipId, at, { rotation: normalizeAngle(propertyAt(clip, "rotation", at) + 90) });
 }
 
 export function flipClip(project: Project, clipId: Id, axis: "x" | "y"): Project {
