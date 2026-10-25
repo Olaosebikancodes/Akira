@@ -12,6 +12,10 @@ export const FIXTURES = {
   rotated: path.join(FIXTURE_DIR, "rotated.mp4"),
   /** 20 s of slowly changing colour, long enough to cancel mid-export. */
   long: path.join(FIXTURE_DIR, "long.mp4"),
+  /** 200×200 PNG: a green circle on a transparent background, like a sticker. */
+  sticker: path.join(FIXTURE_DIR, "sticker.png"),
+  /** 16×16 GIF that loops green then blue, half a second each. */
+  animated: path.join(FIXTURE_DIR, "animated.gif"),
   notMedia: path.join(FIXTURE_DIR, "notes.txt"),
 };
 
@@ -23,6 +27,7 @@ export async function ensureFixtures(page: Page): Promise<void> {
   if (Object.values(FIXTURES).every((file) => existsSync(file))) return;
   mkdirSync(FIXTURE_DIR, { recursive: true });
   writeFileSync(FIXTURES.notMedia, "This is not a video.");
+  writeFileSync(FIXTURES.animated, animatedGif());
 
   // Node resolves Mediabunny's Node build; the page needs the browser bundle.
   let packageDir = createRequire(__filename).resolve("mediabunny");
@@ -34,12 +39,69 @@ export async function ensureFixtures(page: Page): Promise<void> {
   writeFileSync(FIXTURES.colors, Buffer.from(clips.colors, "base64"));
   writeFileSync(FIXTURES.rotated, Buffer.from(clips.rotated, "base64"));
   writeFileSync(FIXTURES.long, Buffer.from(clips.long, "base64"));
+  writeFileSync(FIXTURES.sticker, Buffer.from(clips.sticker, "base64"));
+}
+
+/**
+ * A two-frame looping GIF, written byte by byte because browsers can't encode
+ * GIFs. Resetting the LZW table every two pixels keeps every code three bits
+ * wide, which makes the compressor trivial.
+ */
+function animatedGif(): Buffer {
+  const size = 16;
+  const bytes: number[] = [];
+  const push = (...values: number[]) => bytes.push(...values);
+  const word = (value: number) => push(value & 0xff, value >> 8);
+
+  push(...Buffer.from("GIF89a"));
+  word(size);
+  word(size);
+  push(0b1000_0001, 0, 0); // Global colour table of 4 entries.
+  push(0, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255); // Black, green, blue, white.
+  push(0x21, 0xff, 11, ...Buffer.from("NETSCAPE2.0"), 3, 1, 0, 0, 0); // Loop forever.
+
+  for (const colour of [1, 2]) {
+    push(0x21, 0xf9, 4, 0, 50, 0, 0, 0); // Show for 50 hundredths of a second.
+    push(0x2c);
+    word(0);
+    word(0);
+    word(size);
+    word(size);
+    push(0);
+    push(2); // Minimum code size: clear is 4, end is 5.
+    const codes: number[] = [];
+    for (let i = 0; i < size * size; i++) {
+      if (i % 2 === 0) codes.push(4);
+      codes.push(colour);
+    }
+    codes.push(5);
+    const data: number[] = [];
+    let buffer = 0;
+    let bits = 0;
+    for (const code of codes) {
+      buffer |= code << bits;
+      bits += 3;
+      while (bits >= 8) {
+        data.push(buffer & 0xff);
+        buffer >>= 8;
+        bits -= 8;
+      }
+    }
+    if (bits > 0) data.push(buffer & 0xff);
+    for (let i = 0; i < data.length; i += 255) {
+      const block = data.slice(i, i + 255);
+      push(block.length, ...block);
+    }
+    push(0);
+  }
+  push(0x3b);
+  return Buffer.from(bytes);
 }
 
 /** Runs in the page. Must be self-contained: it's serialised by Playwright. */
 async function buildClips(
   bundle: string,
-): Promise<{ colors: string; rotated: string; long: string }> {
+): Promise<{ colors: string; rotated: string; long: string; sticker: string }> {
   const url = URL.createObjectURL(new Blob([bundle], { type: "text/javascript" }));
   // Built from a string so the test transpiler can't turn import() into require().
   const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
@@ -108,5 +170,15 @@ async function buildClips(
     ctx.fillStyle = `hsl(${(frame * 2) % 360} 70% 50%)`;
     ctx.fillRect(0, 0, width, height);
   });
-  return { colors, rotated, long };
+  const stickerCanvas = new OffscreenCanvas(200, 200);
+  const stickerContext = stickerCanvas.getContext("2d")!;
+  stickerContext.fillStyle = "#00ff00";
+  stickerContext.beginPath();
+  stickerContext.arc(100, 100, 90, 0, Math.PI * 2);
+  stickerContext.fill();
+  const stickerBytes = new Uint8Array(await (await stickerCanvas.convertToBlob({ type: "image/png" })).arrayBuffer());
+  let stickerBinary = "";
+  for (const byte of stickerBytes) stickerBinary += String.fromCharCode(byte);
+
+  return { colors, rotated, long, sticker: btoa(stickerBinary) };
 }

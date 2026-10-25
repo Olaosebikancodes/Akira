@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { SpikeEditor } from "@/components/features/spike-editor";
+import { Editor } from "@/components/editor/editor";
 
 export const metadata: Metadata = {
   title: "Editor · Akira",
 };
 
 export default function EditorPage() {
-  return <SpikeEditor />;
+  return <Editor />;
 }

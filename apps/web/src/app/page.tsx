@@ -13,7 +13,7 @@ export default function Home() {
         href="/editor"
         className="mt-2 w-fit rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        Open the engine test
+        Open the editor
       </Link>
     </main>
   );
