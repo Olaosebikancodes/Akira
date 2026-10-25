@@ -51,19 +51,24 @@ describe("frameToMicros", () => {
 });
 
 describe("microsToFrame", () => {
+  // These check 20,000 frames each, so they collect mismatches and assert
+  // once: an expect() per frame made them slow enough to time out under load.
   it.each(RATES)("round-trips every frame at %s fps", (_, rate) => {
+    const wrong: number[] = [];
     for (let frame = 0; frame < 20_000; frame++) {
-      expect(microsToFrame(frameToMicros(frame, rate), rate)).toBe(frame);
+      if (microsToFrame(frameToMicros(frame, rate), rate) !== frame) wrong.push(frame);
     }
+    expect(wrong).toEqual([]);
   });
 
   it.each(RATES)(
     "keeps the previous frame until the next one starts at %s fps",
     (_, rate) => {
+      const wrong: number[] = [];
       for (let frame = 1; frame < 20_000; frame++) {
-        const start = frameToMicros(frame, rate);
-        expect(microsToFrame(start - 1, rate)).toBe(frame - 1);
+        if (microsToFrame(frameToMicros(frame, rate) - 1, rate) !== frame - 1) wrong.push(frame);
       }
+      expect(wrong).toEqual([]);
     },
   );
 
