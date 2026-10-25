@@ -211,6 +211,9 @@ class AudioSession {
   }
 
   private async stream(clip: AudibleClip): Promise<void> {
+    const gain = this.context.createGain();
+    gain.gain.value = clip.clip.volume;
+    gain.connect(this.output);
     for await (const placed of clipAudio(clip, this.from)) {
       if (this.stopped) return;
       await this.waitUntilNeeded(placed.placement.at);
@@ -218,7 +221,7 @@ class AudioSession {
 
       const node = playPlacedBuffer(
         this.context,
-        this.output,
+        gain,
         placed,
         clip.clip.speed,
         this.timelineOrigin,

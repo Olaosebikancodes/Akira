@@ -23,8 +23,11 @@ export async function renderAudioMix(
   });
 
   for (const clip of audibleClips(project, files)) {
+    const gain = context.createGain();
+    gain.gain.value = clip.clip.volume;
+    gain.connect(context.destination);
     for await (const placed of clipAudio(clip, 0)) {
-      playPlacedBuffer(context, context.destination, placed, clip.clip.speed, 0);
+      playPlacedBuffer(context, gain, placed, clip.clip.speed, 0);
     }
   }
 
