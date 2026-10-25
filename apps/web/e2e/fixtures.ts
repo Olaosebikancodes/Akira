@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Page } from "@playwright/test";
@@ -21,6 +21,10 @@ export const FIXTURES = {
    * hum (2-4 s), then 1 kHz bursts over hiss (4-8 s), like speech in a noisy room.
    */
   dirty: path.join(FIXTURE_DIR, "dirty.wav"),
+  /** Two captions: "Hello there" from 0.5 to 1.5 s and "Second line" from 2 to 3 s. */
+  captions: path.join(FIXTURE_DIR, "captions.srt"),
+  /** A real font file under a different name: its family becomes "Brand Font". */
+  font: path.join(FIXTURE_DIR, "Brand_Font.woff2"),
   notMedia: path.join(FIXTURE_DIR, "notes.txt"),
 };
 
@@ -37,6 +41,12 @@ export async function ensureFixtures(page: Page): Promise<void> {
   writeFileSync(FIXTURES.notMedia, "This is not a video.");
   writeFileSync(FIXTURES.animated, animatedGif());
   writeFileSync(FIXTURES.dirty, dirtyWav());
+  // Windows line endings on purpose: plenty of real .srt files have them.
+  writeFileSync(
+    FIXTURES.captions,
+    "1\r\n00:00:00,500 --> 00:00:01,500\r\nHello there\r\n\r\n2\r\n00:00:02,000 --> 00:00:03,000\r\nSecond line\r\n",
+  );
+  copyFileSync(path.join(__dirname, "../public/fonts/anton-400.woff2"), FIXTURES.font);
 
   const bundle = mediabunnyBundle();
 

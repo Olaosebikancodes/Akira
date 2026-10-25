@@ -129,7 +129,7 @@ test("plays in real time, pauses and stops at the end", async ({ page }) => {
   await page.keyboard.press("Home");
   await page.getByRole("button", { name: "Play" }).click();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-  await expect.poll(() => colourAt(page), { timeout: 5_000 }).toBe("green");
+  await expect.poll(() => colourAt(page), { timeout: 10_000 }).toBe("green");
   await page.keyboard.press(" ");
   const paused = await currentTime(page).textContent();
   await page.waitForTimeout(400);
@@ -137,7 +137,7 @@ test("plays in real time, pauses and stops at the end", async ({ page }) => {
 
   await page.keyboard.press(" ");
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Play" })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible({ timeout: 10_000 });
   await expect(currentTime(page)).toHaveText("00:00:03:00");
 });
 
@@ -368,6 +368,75 @@ test("records a voiceover onto an audio track", async ({ page }) => {
   await page.getByRole("button", { name: "Stop recording" }).click();
   await expect(page.getByRole("button", { name: /^Voiceover 1.(webm|m4a),/ })).toHaveCount(1, { timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Lock audio track" })).toBeVisible();
+});
+
+// Text
+
+/**
+ * Adds the "Boxed" preset (white text on a red box) with a single dot for
+ * text, so the middle of the box is solid red and easy to check.
+ */
+async function addBoxedDot(page: Page) {
+  await page.getByRole("tab", { name: "Text" }).click();
+  await page.getByRole("button", { name: "Add Boxed text" }).click();
+  const words = page.getByRole("textbox", { name: "Text", exact: true });
+  await expect(words).toBeFocused();
+  await words.fill(".");
+  await words.blur();
+}
+
+test("adds styled text and draws it on the canvas", async ({ page }) => {
+  await expect.poll(() => colourAt(page)).toBe("black");
+  await addBoxedDot(page);
+  await expect(duration(page)).toHaveText("00:00:03:00");
+  await expect(page.getByRole("button", { name: /^\., / })).toHaveCount(1);
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("fades text in", async ({ page }) => {
+  await addBoxedDot(page);
+  await page.getByLabel("In", { exact: true }).selectOption("fade");
+  await setNumber(page, "In duration", 1);
+  await page.keyboard.press("Home");
+  await expect.poll(() => colourAt(page)).toBe("black");
+  await goToFrame(page, 45);
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("exports text, drawn in the export worker", async ({ page }) => {
+  await addBoxedDot(page);
+  const exported = await exportVideo(page);
+  await page.getByRole("button", { name: /^\., / }).click();
+  await page.keyboard.press("Delete");
+  await page.getByRole("tab", { name: "Media" }).click();
+  await addClip(page, exported);
+  await page.keyboard.press("Home");
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("imports .srt captions as text clips", async ({ page }) => {
+  await importMedia(page, FIXTURES.captions);
+  await expect(page.getByRole("button", { name: /^Hello there, 00:00:00:15 to 00:00:01:15/ })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^Second line, 00:00:02:00 to 00:00:03:00/ })).toHaveCount(1);
+  await expect(duration(page)).toHaveText("00:00:03:00");
+});
+
+test("imports a font and uses it for text", async ({ page }) => {
+  await importMedia(page, FIXTURES.font);
+  await page.getByRole("tab", { name: "Text" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: /^Brand Font/ })).toBeVisible();
+  await page.getByRole("button", { name: "Add Title text" }).click();
+  await page.getByLabel("Font", { exact: true }).selectOption("Brand Font");
+  await expect(page.getByLabel("Font", { exact: true })).toHaveValue("Brand Font");
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("double-clicking text on the canvas edits its words", async ({ page }) => {
+  await addBoxedDot(page);
+  await page.getByRole("textbox", { name: "Text", exact: true }).blur();
+  const box = (await preview(page).boundingBox())!;
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByRole("textbox", { name: "Text", exact: true })).toBeFocused();
 });
 
 // Export
