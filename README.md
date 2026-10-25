@@ -28,7 +28,8 @@ packages/engine   Editing engine: project model, decoding, compositing, audio, e
 The engine is plain TypeScript with no UI framework, so it can be tested on its own and reused outside the web app.
 
 - **Media:** [Mediabunny](https://mediabunny.dev) on top of WebCodecs for hardware-accelerated decode, encode and muxing
-- **Rendering:** a custom WebGL2 compositor. Preview and export share the same shader pipeline, so what you see is what you export
+- **Rendering:** a custom WebGL2 compositor. Each frame is built in an offscreen buffer, so blend modes can read what's beneath a layer, and clips with grading, effects or Enhance run through their own shader passes first. Preview and export share the same pipeline, so what you see is what you export
+- **Shaders from others:** transitions come from [gl-transitions](https://github.com/gl-transitions/gl-transitions) and upscaling from AMD FidelityFX Super Resolution 1. Each is credited, with its licence, in [THIRD_PARTY_NOTICES.md](packages/engine/THIRD_PARTY_NOTICES.md)
 - **Time:** integer microseconds throughout, never floating-point seconds, so cuts stay frame-accurate
 
 ## Development

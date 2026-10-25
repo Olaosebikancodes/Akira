@@ -57,6 +57,16 @@ function errorNotice(page: Page): Locator {
 
 /** The dominant colour at a point in the preview, as fractions of its width and height. */
 async function colourAt(page: Page, x = 0.5, y = 0.5): Promise<Colour> {
+  const [r, g, b] = await rgbAt(page, x, y);
+  if (r > 150 && g < 100 && b < 100) return "red";
+  if (g > 150 && r < 100 && b < 100) return "green";
+  if (b > 150 && r < 100 && g < 100) return "blue";
+  if (r < 30 && g < 30 && b < 30) return "black";
+  return "other";
+}
+
+/** The exact colour at a point in the preview, 0-255 per channel. */
+async function rgbAt(page: Page, x = 0.5, y = 0.5): Promise<[number, number, number]> {
   const png = await preview(page).screenshot();
   const [r, g, b] = await page.evaluate(
     async ({ base64, x, y }) => {
@@ -71,11 +81,13 @@ async function colourAt(page: Page, x = 0.5, y = 0.5): Promise<Colour> {
     },
     { base64: png.toString("base64"), x, y },
   );
-  if (r! > 150 && g! < 100 && b! < 100) return "red";
-  if (g! > 150 && r! < 100 && b! < 100) return "green";
-  if (b! > 150 && r! < 100 && g! < 100) return "blue";
-  if (r! < 30 && g! < 30 && b! < 30) return "black";
-  return "other";
+  return [r!, g!, b!];
+}
+
+/** How far a colour is from grey: the gap between its strongest and weakest channel. */
+async function chromaAt(page: Page, x = 0.5, y = 0.5): Promise<number> {
+  const rgb = await rgbAt(page, x, y);
+  return Math.max(...rgb) - Math.min(...rgb);
 }
 
 async function stepFrames(page: Page, count: number) {
@@ -85,7 +97,23 @@ async function stepFrames(page: Page, count: number) {
 
 async function goToFrame(page: Page, frame: number) {
   await page.keyboard.press("Home");
-  await stepFrames(page, frame);
+  // Shift+arrow steps a second at a time; test projects run at 30 fps.
+  for (let i = 0; i < Math.floor(frame / 30); i++) await page.keyboard.press("Shift+ArrowRight");
+  await stepFrames(page, frame % 30);
+}
+
+async function libraryTab(page: Page, name: string) {
+  await page.getByRole("tablist", { name: "Library" }).getByRole("tab", { name }).click();
+}
+
+async function clipTab(page: Page, name: string) {
+  await page.getByRole("tablist", { name: "Clip settings" }).getByRole("tab", { name }).click();
+}
+
+/** Puts a second copy of a clip right after the first on the main track. */
+async function addAgain(page: Page, name: string) {
+  await libraryTab(page, "Media");
+  await page.getByRole("button", { name: `Add ${name} to timeline` }).click();
 }
 
 /** Exports the project and returns the downloaded file's path. */
@@ -440,6 +468,184 @@ test("double-clicking text on the canvas edits its words", async ({ page }) => {
   const box = (await preview(page).boundingBox())!;
   await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.getByRole("textbox", { name: "Text", exact: true })).toBeFocused();
+});
+
+// Looks
+
+test("puts a transition on a cut, mixing both clips half-way through", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await addAgain(page, "colors.mp4");
+  await expect(duration(page)).toHaveText("00:00:06:00");
+  await page.getByRole("button", { name: "Add transition" }).click();
+  await expect(page.getByRole("button", { name: "Fade transition, edit" })).toBeVisible();
+
+  // Half a second centred on the cut at 3 s: blue holds, then fades into red.
+  await goToFrame(page, 80);
+  await expect.poll(() => colourAt(page)).toBe("blue");
+  await goToFrame(page, 90);
+  await expect
+    .poll(async () => {
+      const [r, g, b] = await rgbAt(page);
+      return r > 80 && r < 180 && b > 80 && b < 180 && g < 60;
+    })
+    .toBe(true);
+  await goToFrame(page, 100);
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("picks a transition from the library and sets its length", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await addAgain(page, "colors.mp4");
+  await clips(page, "colors.mp4").first().click();
+  await libraryTab(page, "Effects");
+  await page.getByLabel("Search transitions").fill("circle");
+  await page.getByRole("button", { name: "Circle open", exact: true }).hover();
+  // Hovering plays the transition on the real renderer.
+  await expect(page.getByRole("button", { name: "Circle open", exact: true }).locator("canvas")).toHaveCount(1);
+  await page.getByRole("button", { name: "Circle open", exact: true }).click();
+  await expect(page.getByLabel("Into next clip")).toHaveValue("CircleOpen");
+  await expect(page.getByRole("button", { name: "Circle open transition, edit" })).toBeVisible();
+  await setNumber(page, "Duration", 1);
+  await expect(page.getByLabel("Duration value")).toHaveValue("1");
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("grades a clip from the Colour tab", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await goToFrame(page, 15);
+  await expect.poll(() => chromaAt(page)).toBeGreaterThan(150);
+  await clipTab(page, "Colour");
+  await setNumber(page, "Saturation", -100);
+  await expect.poll(() => chromaAt(page)).toBeLessThan(12);
+  await page.getByRole("button", { name: "Reset adjustments" }).click();
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("applies a built-in filter from the library", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await goToFrame(page, 15);
+  await libraryTab(page, "Effects");
+  await page.getByRole("radio", { name: "Filters" }).click();
+  await page.getByRole("button", { name: "Mono", exact: true }).click();
+  await expect.poll(() => chromaAt(page)).toBeLessThan(12);
+  await clipTab(page, "Colour");
+  await expect(page.getByLabel("Saturation value")).toHaveValue("-100");
+});
+
+test("grades with an imported .cube LUT", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await importMedia(page, FIXTURES.lut);
+  await expect(page.getByRole("listitem").filter({ hasText: "Swap_Red_Blue.cube" })).toBeVisible();
+  await goToFrame(page, 15);
+  await clips(page, "colors.mp4").click();
+  await clipTab(page, "Colour");
+  await page.getByLabel("Lookup table").selectOption({ label: "Swap_Red_Blue" });
+  await expect.poll(() => colourAt(page)).toBe("blue");
+  await setNumber(page, "Intensity", 0);
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("keys out a green screen", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await goToFrame(page, 45);
+  await expect.poll(() => colourAt(page)).toBe("green");
+  await clipTab(page, "Colour");
+  await page.getByLabel("Remove a colour").check();
+  await expect.poll(() => colourAt(page)).toBe("black");
+  // Shortcuts ignore keys typed into a control, so leave the checkbox first.
+  await page.getByLabel("Remove a colour").blur();
+  // Red is nowhere near green, so it stays.
+  await goToFrame(page, 15);
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("masks a clip to a circle, and inverts it", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await goToFrame(page, 15);
+  await clipTab(page, "Effects");
+  await page.getByRole("radiogroup", { name: "Mask shape" }).getByRole("radio", { name: "Circle" }).click();
+  await expect.poll(() => colourAt(page, 0.5, 0.5)).toBe("red");
+  await expect.poll(() => colourAt(page, 0.04, 0.06)).toBe("black");
+  await page.getByLabel("Invert").check();
+  await expect.poll(() => colourAt(page, 0.5, 0.5)).toBe("black");
+  await expect.poll(() => colourAt(page, 0.04, 0.06)).toBe("red");
+});
+
+test("blends an overlay with what's beneath it", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  const tile = page.getByRole("listitem").filter({ hasText: "colors.mp4" });
+  const ruler = page.getByRole("region", { name: "Timeline" }).locator("canvas").first();
+  const target = (await ruler.boundingBox())!;
+  await tile.dragTo(ruler, { targetPosition: { x: 4, y: target.height / 2 } });
+  await expect(tracks(page)).toHaveCount(2);
+
+  // The overlay is the copy higher up the timeline.
+  const tops = await clips(page, "colors.mp4").evaluateAll((elements) => elements.map((e) => e.getBoundingClientRect().top));
+  await clips(page, "colors.mp4").nth(tops[0]! < tops[1]! ? 0 : 1).click();
+  await goToFrame(page, 15);
+  await clipTab(page, "Effects");
+  // Red over the same red: difference cancels out, screen keeps it.
+  await page.getByLabel("Blend mode").selectOption("difference");
+  await expect.poll(() => colourAt(page)).toBe("black");
+  await page.getByLabel("Blend mode").selectOption("screen");
+  await expect.poll(() => colourAt(page)).toBe("red");
+});
+
+test("adds an effect from the library and tunes it in the inspector", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await libraryTab(page, "Effects");
+  await page.getByRole("radio", { name: "Effects" }).click();
+  await page.getByRole("button", { name: /^Glitch/ }).click();
+  await expect(page.getByRole("button", { name: /^Glitch/ }).getByLabel("Added")).toBeVisible();
+  await clipTab(page, "Effects");
+  await expect(page.getByLabel("Glitch value")).toHaveValue("50");
+  await page.getByLabel("Add effect").selectOption({ label: "Blur" });
+  await expect(page.getByLabel("Blur value")).toHaveValue("50");
+  await page.getByRole("button", { name: "Remove Glitch" }).click();
+  await expect(page.getByLabel("Glitch value")).toHaveCount(0);
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("enhances a clip in one tap", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await goToFrame(page, 15);
+  await clipTab(page, "Enhance");
+  // Auto colour reads the clip's thumbnails, so wait for them.
+  await expect(page.getByRole("button", { name: "Apply" })).toBeEnabled();
+  await page.getByRole("button", { name: "Enhance in one tap" }).click();
+  await expect(page.getByLabel("Sharpen value")).toHaveValue("35");
+  await expect(page.getByLabel("Upscale with FSR")).toBeChecked();
+  await expect(page.getByText("On: black and white points set.")).toBeVisible();
+  await expect.poll(() => colourAt(page)).toBe("red");
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("exports transitions and LUTs, drawn in the export worker", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await addAgain(page, "colors.mp4");
+  await addAgain(page, "colors.mp4");
+  await page.getByRole("button", { name: "Add transition" }).first().click();
+  await importMedia(page, FIXTURES.lut);
+  await clips(page, "colors.mp4").last().click();
+  await clipTab(page, "Colour");
+  await page.getByLabel("Lookup table").selectOption({ label: "Swap_Red_Blue" });
+  const exported = await exportVideo(page);
+
+  await page.keyboard.press("Control+a");
+  await page.keyboard.press("Delete");
+  await libraryTab(page, "Media");
+  await addClip(page, exported);
+  await expect(duration(page)).toHaveText("00:00:09:00");
+  await goToFrame(page, 90);
+  await expect
+    .poll(async () => {
+      const [r, g, b] = await rgbAt(page);
+      return r > 80 && r < 180 && b > 80 && b < 180 && g < 60;
+    })
+    .toBe(true);
+  // The third clip starts red, and the LUT turns it blue.
+  await goToFrame(page, 195);
+  await expect.poll(() => colourAt(page)).toBe("blue");
 });
 
 // Export

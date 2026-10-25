@@ -25,6 +25,8 @@ export const FIXTURES = {
   captions: path.join(FIXTURE_DIR, "captions.srt"),
   /** A real font file under a different name: its family becomes "Brand Font". */
   font: path.join(FIXTURE_DIR, "Brand_Font.woff2"),
+  /** A 2×2×2 .cube LUT that swaps red and blue. */
+  lut: path.join(FIXTURE_DIR, "Swap_Red_Blue.cube"),
   notMedia: path.join(FIXTURE_DIR, "notes.txt"),
 };
 
@@ -47,6 +49,7 @@ export async function ensureFixtures(page: Page): Promise<void> {
     "1\r\n00:00:00,500 --> 00:00:01,500\r\nHello there\r\n\r\n2\r\n00:00:02,000 --> 00:00:03,000\r\nSecond line\r\n",
   );
   copyFileSync(path.join(__dirname, "../public/fonts/anton-400.woff2"), FIXTURES.font);
+  writeFileSync(FIXTURES.lut, swapLut());
 
   const bundle = mediabunnyBundle();
 
@@ -131,6 +134,14 @@ export async function audioLevels(page: Page, file: string, windows: readonly (r
     },
     { bundle: mediabunnyBundle(), base64: readFileSync(file).toString("base64"), windows },
   );
+}
+
+/** Red becomes blue and blue becomes red: easy to see, and only a lookup table would do it. */
+function swapLut(): string {
+  const lines = ['TITLE "Swap red and blue"', "LUT_3D_SIZE 2"];
+  // Red varies fastest, so each line's input is (r, g, b) and its output (b, g, r).
+  for (const b of [0, 1]) for (const g of [0, 1]) for (const r of [0, 1]) lines.push(`${b} ${g} ${r}`);
+  return `${lines.join("\n")}\n`;
 }
 
 /**
