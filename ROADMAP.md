@@ -32,12 +32,12 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Images and stickers (PNG, GIF, WebP), canvas background (colour, blur, image), aspect ratio presets
 - [x] Decoding and export moved off the main thread into workers
 
-## 3. Audio
+## 3. Audio ✅
 
-- [ ] Audio tracks with volume, fades, mute and solo
-- [ ] Waveforms
-- [ ] Voiceover recording
-- [ ] Noise reduction (classic filters for hiss, hum and rumble)
+- [x] Audio tracks with volume, fades, mute and solo
+- [x] Waveforms
+- [x] Voiceover recording
+- [x] Noise reduction (classic filters for hiss, hum and rumble)
 
 ## 4. Text
 
