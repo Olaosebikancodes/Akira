@@ -33,10 +33,11 @@ import {
   updateClipLook,
 } from "@akira/engine";
 import { ArrowClockwiseIcon, FlipHorizontalIcon, FlipVerticalIcon } from "@phosphor-icons/react";
-import { useId } from "react";
+import { useId, useState } from "react";
+import { ColourTab, EffectsTab, EnhanceTab, TransitionSection } from "./inspector-look";
 import { AnimationSection, TextSections } from "./inspector-text";
 import { commit, endGesture, liveEdit, useEditor } from "./store";
-import { Button, focusRing, IconButton, Section, Segmented, SliderField } from "./ui";
+import { Button, focusRing, IconButton, Section, Segmented, SliderField, Tabs } from "./ui";
 
 const FRAME_RATES = [
   { label: "23.976", rate: FPS_23_976 },
@@ -51,10 +52,14 @@ const FRAME_RATES = [
 
 const live = liveEdit;
 
+type ClipTab = "basic" | "colour" | "effects" | "enhance";
+
 export function Inspector() {
   const selection = useEditor((s) => s.selection);
   const project = useEditor((s) => s.project);
   const found = selection.length === 1 ? locateClip(project, selection[0]!) : undefined;
+  // Kept here, so moving between clips stays on the same tab.
+  const [tab, setTab] = useState<ClipTab>("basic");
 
   return (
     <aside aria-label="Inspector" className="flex min-h-0 flex-col overflow-y-auto bg-panel">
@@ -64,7 +69,14 @@ export function Inspector() {
         </h2>
       </header>
       {found ? (
-        <ClipInspector project={project} clip={found.clip} isVisual={found.track.kind === "video"} locked={found.track.locked} />
+        <ClipInspector
+          project={project}
+          clip={found.clip}
+          isVisual={found.track.kind === "video"}
+          locked={found.track.locked}
+          tab={tab}
+          onTab={setTab}
+        />
       ) : selection.length > 1 ? (
         <p className="px-4 py-4 text-xs text-muted">
           Delete, duplicate or split them together from the timeline toolbar.
@@ -76,7 +88,21 @@ export function Inspector() {
   );
 }
 
-function ClipInspector({ project, clip, isVisual, locked }: { project: Project; clip: Clip; isVisual: boolean; locked: boolean }) {
+function ClipInspector({
+  project,
+  clip,
+  isVisual,
+  locked,
+  tab,
+  onTab,
+}: {
+  project: Project;
+  clip: Clip;
+  isVisual: boolean;
+  locked: boolean;
+  tab: ClipTab;
+  onTab: (tab: ClipTab) => void;
+}) {
   const asset = assetOf(project, clip);
   const still = isStill(project, clip);
   const { transform, crop } = clip;
@@ -86,7 +112,7 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
     return <p className="px-4 py-4 text-xs text-muted">This clip is on a locked track. Unlock the track to edit it.</p>;
   }
 
-  return (
+  const basic = (
     <div>
       {clip.text && <TextSections clip={clip} />}
 
@@ -120,6 +146,8 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
         </Section>
       )}
 
+      {isVisual && <TransitionSection project={project} clip={clip} />}
+
       {isVisual && <AnimationSection clip={clip} />}
 
       {!still && (
@@ -145,6 +173,25 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
 
       {!still && asset.audio && <AudioSection clip={clip} />}
     </div>
+  );
+
+  if (!isVisual) return basic;
+  const tabs: { value: ClipTab; label: string }[] = [
+    { value: "basic", label: "Basic" },
+    { value: "colour", label: "Colour" },
+    { value: "effects", label: "Effects" },
+  ];
+  // Enhance is for footage; text is already drawn sharp at its final size.
+  if (!clip.text) tabs.push({ value: "enhance", label: "Enhance" });
+  const shown = tabs.some((t) => t.value === tab) ? tab : "basic";
+
+  return (
+    <Tabs label="Clip settings" tabs={tabs} value={shown} onChange={onTab}>
+      {shown === "basic" && basic}
+      {shown === "colour" && <ColourTab project={project} clip={clip} />}
+      {shown === "effects" && <EffectsTab clip={clip} />}
+      {shown === "enhance" && <EnhanceTab clip={clip} />}
+    </Tabs>
   );
 }
 

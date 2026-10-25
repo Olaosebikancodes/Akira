@@ -1,7 +1,7 @@
 "use client";
 
 import type { Icon } from "@phosphor-icons/react";
-import { type ReactNode, useId } from "react";
+import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
 
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
@@ -165,6 +165,132 @@ export function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Text tabs with their panel. Arrow keys move between tabs, as the ARIA tab
+ * pattern expects; the editor's own arrow shortcuts don't also fire.
+ */
+export function Tabs<T extends string>({
+  label,
+  tabs,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  tabs: readonly { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  children: ReactNode;
+}) {
+  const baseId = useId();
+  const refs = useRef(new Map<T, HTMLButtonElement>());
+
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const index = tabs.findIndex((tab) => tab.value === value);
+    const next = tabs[(index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]!;
+    onChange(next.value);
+    refs.current.get(next.value)?.focus();
+  }
+
+  return (
+    <>
+      <div role="tablist" aria-label={label} className="sticky top-0 z-10 flex shrink-0 gap-1 border-b border-border bg-panel px-3" onKeyDown={onKeyDown}>
+        {tabs.map((tab) => {
+          const selected = tab.value === value;
+          return (
+            <button
+              key={tab.value}
+              ref={(element) => {
+                if (element) refs.current.set(tab.value, element);
+              }}
+              type="button"
+              role="tab"
+              id={`${baseId}-${tab.value}-tab`}
+              aria-selected={selected}
+              aria-controls={`${baseId}-panel`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onChange(tab.value)}
+              className={`-mb-px h-9 border-b-2 px-2 text-xs font-medium ${selected ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"} ${FOCUS}`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+      <div role="tabpanel" id={`${baseId}-panel`} aria-labelledby={`${baseId}-${value}-tab`}>
+        {children}
+      </div>
+    </>
+  );
+}
+
+/** A labelled native select, styled to match the other controls. */
+export function SelectField<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <label htmlFor={id} className="text-xs text-muted">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+        className={`h-8 min-w-0 max-w-[60%] flex-1 rounded-md border border-border bg-raised px-2 text-xs text-foreground ${FOCUS}`}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** A checkbox with a label and an optional hint underneath. */
+export function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <label htmlFor={id} className="flex cursor-pointer items-center justify-between gap-3">
+      <span className="flex flex-col">
+        <span className="text-xs text-muted">{label}</span>
+        {hint && <span className="text-[11px] text-subtle">{hint}</span>}
+      </span>
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className={`size-4 shrink-0 cursor-pointer accent-accent ${FOCUS}`}
+      />
+    </label>
   );
 }
 
