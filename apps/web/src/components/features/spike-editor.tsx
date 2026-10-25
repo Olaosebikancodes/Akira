@@ -374,7 +374,7 @@ function projectFor(asset: Asset): Project {
     width: video ? even(video.width * scale) : 1280,
     height: video ? even(video.height * scale) : 720,
     frameRate: video?.frameRate ?? FPS_30,
-    background: "#000000",
+    background: { kind: "color", color: "#000000" },
   });
   project.assets[asset.id] = asset;
   const track = asset.kind === "audio" ? createTrack("audio") : project.tracks[0]!;

@@ -7,7 +7,11 @@ export {
   UnsupportedMediaError,
 } from "./media/media-file";
 export { Player, type PlayerEvents } from "./playback/player";
+export * from "./project/canvas";
 export * from "./project/create";
+export * from "./project/edit";
 export * from "./project/model";
+export * from "./project/query";
+export * from "./project/snap";
 export * from "./project/timing";
 export * from "./time";

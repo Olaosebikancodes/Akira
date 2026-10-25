@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Clip } from "./model";
+import { type Clip, IDENTITY_TRANSFORM, NO_CROP } from "./model";
 import { clipContains, clipDuration, clipEnd, sourceTimeAt } from "./timing";
 
 function clip(overrides: Partial<Clip> = {}): Clip {
@@ -10,6 +10,9 @@ function clip(overrides: Partial<Clip> = {}): Clip {
     sourceIn: 2_000_000,
     sourceOut: 6_000_000,
     speed: 1,
+    volume: 1,
+    transform: IDENTITY_TRANSFORM,
+    crop: NO_CROP,
     ...overrides,
   };
 }

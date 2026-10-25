@@ -1,6 +1,7 @@
 import type { AudioBufferSink } from "mediabunny";
 import type { MediaFiles } from "../media/media-file";
 import type { Clip, Project } from "../project/model";
+import { isAudible } from "../project/query";
 import { clipEnd, toSourceTime } from "../project/timing";
 import { type Micros, microsToSeconds, secondsToMicros } from "../time";
 import { type AudioPlacement, placeAudioBuffer } from "./placement";
@@ -10,14 +11,14 @@ export interface AudibleClip {
   sink: AudioBufferSink;
 }
 
-/** Clips that make sound: on unmuted tracks, with decodable audio. */
+/** Clips that make sound: audible clips on unmuted tracks whose audio can be decoded. */
 export function audibleClips(project: Project, files: MediaFiles): AudibleClip[] {
   const result: AudibleClip[] = [];
   for (const track of project.tracks) {
     if (track.muted) continue;
     for (const clip of track.clips) {
       const sink = files.get(clip.assetId)?.audio;
-      if (sink) result.push({ clip, sink });
+      if (sink && isAudible(project, clip)) result.push({ clip, sink });
     }
   }
   return result;

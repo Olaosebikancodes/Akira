@@ -1,0 +1,518 @@
+import { frameToMicros, type Micros } from "../time";
+import { createId, createTrack } from "./create";
+import { type Asset, type Clip, type Crop, IDENTITY_TRANSFORM, type Id, type Project, type Track, type TrackKind, type Transform } from "./model";
+import { assetOf, isStill, locateClip } from "./query";
+import { clipDuration, clipEnd, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
+
+/*
+ * Every edit is a pure function from one project to the next. The editor's
+ * undo history is just the list of earlier projects, and each function here
+ * can be unit-tested without a browser.
+ *
+ * Rules the edits keep:
+ * - The main track (tracks[0]) is magnetic: its clips sit end to end from
+ *   zero, so inserting, deleting or resizing a clip ripples the rest.
+ * - Clips on other tracks never overlap. A clip dropped onto an occupied
+ *   stretch goes onto a new track instead, as in CapCut.
+ * - Locked tracks don't change, and no clip gets shorter than one frame.
+ */
+
+export const MIN_SPEED = 0.25;
+export const MAX_SPEED = 4;
+export const DEFAULT_FREEZE_DURATION: Micros = 3_000_000;
+
+/** Where a clip should go: an existing track, or a new one when omitted. */
+export interface Placement {
+  trackId?: Id;
+  /** Timeline time for the clip's start. On the main track, the nearest gap between clips wins. */
+  time: Micros;
+}
+
+export function minClipDuration(project: Project): Micros {
+  return frameToMicros(1, project.canvas.frameRate);
+}
+
+/**
+ * Restores the invariants after an edit: the main track is packed from
+ * zero in its current order, other tracks are sorted by start, and empty
+ * tracks other than the main track are removed.
+ */
+export function normalize(project: Project): Project {
+  const tracks = project.tracks
+    .map((track, index) => (index === 0 ? packTrack(track) : sortTrack(track)))
+    .filter((track, index) => index === 0 || track.clips.length > 0);
+  return { ...project, tracks };
+}
+
+export function insertClip(project: Project, clip: Clip, placement: Placement): Project {
+  const kind = trackKindFor(project, clip);
+  const index = placement.trackId
+    ? project.tracks.findIndex((track) => track.id === placement.trackId)
+    : -1;
+  const target = index >= 0 ? project.tracks[index]! : undefined;
+
+  if (target && target.kind === kind && !target.locked) {
+    if (index === 0) return normalize(insertIntoMain(project, clip, placement.time));
+    return normalize(placeOnTrack(project, index, { ...clip, start: Math.max(0, placement.time) }));
+  }
+  return normalize(addTrackWith(project, kind, { ...clip, start: Math.max(0, placement.time) }, project.tracks.length));
+}
+
+/** Moves a clip, keeping its id. Same rules as inserting it fresh. */
+export function moveClip(project: Project, clipId: Id, placement: Placement): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  if (found.trackIndex === 0 && placement.trackId === found.track.id) {
+    return normalize(reorderMain(project, found.clip, placement.time));
+  }
+  const without = updateTrackAt(project, found.trackIndex, (track) => ({
+    ...track,
+    clips: track.clips.filter((c) => c.id !== clipId),
+  }));
+  return insertClip(without, found.clip, placement);
+}
+
+export type Edge = "start" | "end";
+
+/** Drags one edge of a clip to `time`, limited by its source, its neighbours and one frame. */
+export function trimClip(project: Project, clipId: Id, edge: Edge, time: Micros): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, track, trackIndex } = found;
+  const minimum = minClipDuration(project);
+  const still = isStill(project, clip);
+  const asset = assetOf(project, clip);
+  const onMain = trackIndex === 0;
+  const start = clip.start;
+  const end = clipEnd(clip);
+
+  let next: Clip;
+  if (edge === "start") {
+    let lowest = onMain ? -Infinity : Math.max(0, previousEnd(track, clip));
+    if (!still) lowest = Math.max(lowest, toTimelineTime(clip, asset.start));
+    const newStart = Math.round(clamp(time, lowest, end - minimum));
+    next = still
+      ? { ...clip, start: newStart, sourceIn: 0, sourceOut: end - newStart }
+      : { ...clip, start: newStart, sourceIn: toSourceTime(clip, newStart) };
+  } else {
+    let highest = onMain ? Infinity : nextStart(track, clip);
+    if (!still) highest = Math.min(highest, toTimelineTime(clip, asset.start + asset.duration));
+    const newEnd = Math.round(clamp(time, start + minimum, highest));
+    next = still
+      ? { ...clip, sourceIn: 0, sourceOut: newEnd - start }
+      : { ...clip, sourceOut: toSourceTime(clip, newEnd) };
+  }
+  return normalize(replaceClip(project, trackIndex, next));
+}
+
+export interface SplitResult {
+  project: Project;
+  /** Id of the right-hand half, or null when the split wasn't possible. */
+  rightId: Id | null;
+}
+
+/** Cuts a clip in two at `time`. Both halves must be at least a frame long. */
+export function splitClip(project: Project, clipId: Id, time: Micros): SplitResult {
+  const found = locateClip(project, clipId);
+  const minimum = minClipDuration(project);
+  if (!found || found.track.locked) return { project, rightId: null };
+  const { clip, trackIndex } = found;
+  if (time - clip.start < minimum || clipEnd(clip) - time < minimum) return { project, rightId: null };
+
+  const [left, right] = cutAt(project, clip, time);
+  const tracks = project.tracks.map((track, index) =>
+    index === trackIndex
+      ? { ...track, clips: track.clips.flatMap((c) => (c.id === clip.id ? [left, right] : [c])) }
+      : track,
+  );
+  return { project: normalize({ ...project, tracks }), rightId: right.id };
+}
+
+/**
+ * Removes clips. The main track always closes the gap; with `ripple`, other
+ * tracks close theirs too by pulling later clips on the same track back.
+ */
+export function deleteClips(project: Project, clipIds: readonly Id[], ripple = false): Project {
+  const ids = new Set(clipIds);
+  const tracks = project.tracks.map((track) => {
+    if (track.locked || !track.clips.some((clip) => ids.has(clip.id))) return track;
+    if (!ripple) return { ...track, clips: track.clips.filter((clip) => !ids.has(clip.id)) };
+
+    const kept: Clip[] = [];
+    let shift = 0;
+    for (const clip of [...track.clips].sort(byStart)) {
+      if (ids.has(clip.id)) shift += clipDuration(clip);
+      else kept.push(shift ? { ...clip, start: clip.start - shift } : clip);
+    }
+    return { ...track, clips: kept };
+  });
+  return normalize({ ...project, tracks });
+}
+
+export interface DuplicateResult {
+  project: Project;
+  newIds: Id[];
+}
+
+/** Copies each clip to just after itself: next in line on the main track, or the nearest free spot. */
+export function duplicateClips(project: Project, clipIds: readonly Id[]): DuplicateResult {
+  let next = project;
+  const newIds: Id[] = [];
+  for (const id of clipIds) {
+    const found = locateClip(next, id);
+    if (!found || found.track.locked) continue;
+    const copy: Clip = { ...found.clip, id: createId() };
+    newIds.push(copy.id);
+    next =
+      found.trackIndex === 0
+        ? normalize(insertIntoMainAfter(next, copy, id))
+        : normalize(placeOnTrack(next, found.trackIndex, { ...copy, start: clipEnd(found.clip) }));
+  }
+  return { project: next, newIds };
+}
+
+/** Swaps the media a clip shows while keeping its position, length, look and volume. */
+export function replaceClipAsset(project: Project, clipId: Id, asset: Asset): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, track, trackIndex } = found;
+  if (kindForAsset(asset) !== track.kind) return project;
+
+  const length = clipDuration(clip);
+  let next: Clip;
+  if (asset.kind === "image") {
+    next = { ...clip, assetId: asset.id, speed: 1, sourceIn: 0, sourceOut: length, freezeAt: undefined };
+  } else {
+    const speed = isStill(project, clip) ? 1 : clip.speed;
+    const sourceOut = Math.min(asset.start + Math.round(length * speed), asset.start + asset.duration);
+    next = { ...clip, assetId: asset.id, speed, sourceIn: asset.start, sourceOut, freezeAt: undefined };
+  }
+  if (trackIndex !== 0) {
+    // A longer clip mustn't run into the next one on its track.
+    next = { ...next, sourceOut: Math.min(next.sourceOut, toSourceTime(next, nextStart(track, clip))) };
+  }
+  return normalize(replaceClip(project, trackIndex, next));
+}
+
+export interface FreezeResult {
+  project: Project;
+  freezeId: Id | null;
+}
+
+/**
+ * Holds the frame at `time` for `duration`, pushing everything after it
+ * later. Only works on moving video; stills are already frozen.
+ */
+export function freezeFrame(
+  project: Project,
+  clipId: Id,
+  time: Micros,
+  duration: Micros = DEFAULT_FREEZE_DURATION,
+): FreezeResult {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || found.track.kind !== "video") return { project, freezeId: null };
+  const { clip, trackIndex } = found;
+  if (isStill(project, clip) || time < clip.start || time >= clipEnd(clip)) {
+    return { project, freezeId: null };
+  }
+
+  // Freeze at the clip edge rather than leave a sliver shorter than a frame.
+  const minimum = minClipDuration(project);
+  const end = clipEnd(clip);
+  const at = time - clip.start < minimum ? clip.start : end - time < minimum ? end : time;
+  const freeze: Clip = {
+    ...clip,
+    id: createId(),
+    start: at,
+    speed: 1,
+    volume: 0,
+    sourceIn: 0,
+    sourceOut: duration,
+    freezeAt: sourceTimeAt(clip, time),
+  };
+  let pieces: Clip[];
+  if (at === clip.start) pieces = [freeze, clip];
+  else if (at === end) pieces = [clip, freeze];
+  else {
+    const [left, right] = cutAt(project, clip, at);
+    pieces = [left, freeze, right];
+  }
+
+  const tracks = project.tracks.map((track, index) => {
+    if (index !== trackIndex) return track;
+    const clips = track.clips.flatMap((c) => (c.id === clip.id ? pieces : [c]));
+    if (index === 0) return { ...track, clips };
+    // Off the main track, everything from the freeze onwards moves right to make room.
+    return {
+      ...track,
+      clips: clips.map((c) => (c.id !== freeze.id && c.start >= at ? { ...c, start: c.start + duration } : c)),
+    };
+  });
+  return { project: normalize({ ...project, tracks }), freezeId: freeze.id };
+}
+
+export interface DetachResult {
+  project: Project;
+  audioClipId: Id | null;
+}
+
+/** Moves a video clip's sound onto an audio track and silences the video. */
+export function detachAudio(project: Project, clipId: Id): DetachResult {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || found.track.kind !== "video") return { project, audioClipId: null };
+  const { clip, trackIndex } = found;
+  if (clip.volume === 0 || isStill(project, clip) || !assetOf(project, clip).audio) {
+    return { project, audioClipId: null };
+  }
+
+  const audioClip: Clip = { ...clip, id: createId(), transform: IDENTITY_TRANSFORM };
+  const silenced = replaceClip(project, trackIndex, { ...clip, volume: 0 });
+  const free = silenced.tracks.findIndex(
+    (track) => track.kind === "audio" && !track.locked && fits(track, audioClip.start, clipEnd(audioClip)),
+  );
+  const next =
+    free >= 0
+      ? updateTrackAt(silenced, free, (track) => ({ ...track, clips: [...track.clips, audioClip] }))
+      : addTrackWith(silenced, "audio", audioClip, silenced.tracks.length);
+  return { project: normalize(next), audioClipId: audioClip.id };
+}
+
+/** Changes playback speed, keeping the clip's start. Later clips on its track move to make room. */
+export function setClipSpeed(project: Project, clipId: Id, speed: number): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || isStill(project, found.clip)) return project;
+  const { clip, track, trackIndex } = found;
+  const next = { ...clip, speed: clamp(speed, MIN_SPEED, MAX_SPEED) };
+  let updated = replaceClip(project, trackIndex, next);
+
+  if (trackIndex !== 0) {
+    const overlap = clipEnd(next) - nextStart(track, clip);
+    if (overlap > 0) {
+      updated = updateTrackAt(updated, trackIndex, (t) => ({
+        ...t,
+        clips: t.clips.map((c) => (c.start > clip.start ? { ...c, start: c.start + overlap } : c)),
+      }));
+    }
+  }
+  return normalize(updated);
+}
+
+export interface ClipLook {
+  transform?: Partial<Transform>;
+  crop?: Partial<Crop>;
+  volume?: number;
+}
+
+/** Updates how a clip looks or sounds. Doesn't move it in time. */
+export function updateClipLook(project: Project, clipId: Id, look: ClipLook): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  return replaceClip(project, trackIndex, {
+    ...clip,
+    transform: look.transform ? { ...clip.transform, ...look.transform } : clip.transform,
+    crop: look.crop ? clampCrop({ ...clip.crop, ...look.crop }) : clip.crop,
+    volume: look.volume === undefined ? clip.volume : Math.max(0, look.volume),
+  });
+}
+
+/** Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180]. */
+export function rotateClip90(project: Project, clipId: Id): Project {
+  const clip = locateClip(project, clipId)?.clip;
+  if (!clip) return project;
+  return updateClipLook(project, clipId, { transform: { rotation: normalizeAngle(clip.transform.rotation + 90) } });
+}
+
+export function flipClip(project: Project, clipId: Id, axis: "x" | "y"): Project {
+  const clip = locateClip(project, clipId)?.clip;
+  if (!clip) return project;
+  const transform = axis === "x" ? { flipX: !clip.transform.flipX } : { flipY: !clip.transform.flipY };
+  return updateClipLook(project, clipId, { transform });
+}
+
+/**
+ * The keyboard alternative to dragging. On the main track a clip swaps
+ * places with its neighbour; elsewhere it moves by `frames`, stopping at
+ * its neighbours and at zero.
+ */
+export function nudgeClip(project: Project, clipId: Id, frames: number): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || frames === 0) return project;
+  const { clip, track, trackIndex } = found;
+
+  if (trackIndex === 0) {
+    const order = track.clips.map((c) => c.id);
+    const from = order.indexOf(clip.id);
+    const to = clamp(from + Math.sign(frames), 0, order.length - 1);
+    if (to === from) return project;
+    const clips = [...track.clips];
+    [clips[from], clips[to]] = [clips[to]!, clips[from]!];
+    return normalize(updateTrackAt(project, 0, (t) => ({ ...t, clips })));
+  }
+
+  const delta = frameToMicros(Math.abs(frames), project.canvas.frameRate) * Math.sign(frames);
+  const length = clipDuration(clip);
+  const start = clamp(clip.start + delta, Math.max(0, previousEnd(track, clip)), nextStart(track, clip) - length);
+  return normalize(replaceClip(project, trackIndex, { ...clip, start }));
+}
+
+export function addMarker(project: Project, time: Micros): Project {
+  if (project.markers.some((marker) => marker.time === time)) return project;
+  const markers = [...project.markers, { id: createId(), time }].sort((a, b) => a.time - b.time);
+  return { ...project, markers };
+}
+
+export function removeMarker(project: Project, markerId: Id): Project {
+  return { ...project, markers: project.markers.filter((marker) => marker.id !== markerId) };
+}
+
+export type TrackFlag = "muted" | "hidden" | "locked";
+
+export function setTrackFlag(project: Project, trackId: Id, flag: TrackFlag, value: boolean): Project {
+  return {
+    ...project,
+    tracks: project.tracks.map((track) => (track.id === trackId ? { ...track, [flag]: value } : track)),
+  };
+}
+
+// Helpers
+
+function kindForAsset(asset: Asset): TrackKind {
+  return asset.kind === "audio" ? "audio" : "video";
+}
+
+function trackKindFor(project: Project, clip: Clip): TrackKind {
+  return kindForAsset(assetOf(project, clip));
+}
+
+/** Splits a clip into two pieces at `time`; the right piece gets a new id. */
+function cutAt(project: Project, clip: Clip, time: Micros): [Clip, Clip] {
+  if (isStill(project, clip)) {
+    return [
+      { ...clip, sourceIn: 0, sourceOut: time - clip.start },
+      { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time },
+    ];
+  }
+  const cut = toSourceTime(clip, time);
+  return [
+    { ...clip, sourceOut: cut },
+    { ...clip, id: createId(), start: time, sourceIn: cut },
+  ];
+}
+
+function packTrack(track: Track): Track {
+  let time = 0;
+  let changed = false;
+  const clips = track.clips.map((clip) => {
+    const placed = clip.start === time ? clip : ((changed = true), { ...clip, start: time });
+    time += clipDuration(clip);
+    return placed;
+  });
+  return changed ? { ...track, clips } : track;
+}
+
+function sortTrack(track: Track): Track {
+  const sorted = track.clips.every((clip, i) => i === 0 || track.clips[i - 1]!.start <= clip.start);
+  return sorted ? track : { ...track, clips: [...track.clips].sort(byStart) };
+}
+
+function byStart(a: Clip, b: Clip): number {
+  return a.start - b.start;
+}
+
+/** Index at which a clip dropped at `time` lands on the main track: after every clip whose middle it passed. */
+function mainInsertIndex(track: Track, time: Micros, ignoreId?: Id): number {
+  return track.clips.filter((clip) => clip.id !== ignoreId && clip.start + clipDuration(clip) / 2 <= time).length;
+}
+
+function insertIntoMain(project: Project, clip: Clip, time: Micros): Project {
+  return updateTrackAt(project, 0, (track) => {
+    const clips = [...track.clips];
+    clips.splice(mainInsertIndex(track, time), 0, clip);
+    return { ...track, clips };
+  });
+}
+
+function insertIntoMainAfter(project: Project, clip: Clip, afterId: Id): Project {
+  return updateTrackAt(project, 0, (track) => {
+    const clips = [...track.clips];
+    clips.splice(clips.findIndex((c) => c.id === afterId) + 1, 0, clip);
+    return { ...track, clips };
+  });
+}
+
+function reorderMain(project: Project, clip: Clip, time: Micros): Project {
+  return updateTrackAt(project, 0, (track) => {
+    const index = mainInsertIndex(track, time, clip.id);
+    const clips = track.clips.filter((c) => c.id !== clip.id);
+    clips.splice(index, 0, clip);
+    return { ...track, clips };
+  });
+}
+
+/** Puts a clip on a track if it fits there, otherwise on a new track just above it. */
+function placeOnTrack(project: Project, trackIndex: number, clip: Clip): Project {
+  const track = project.tracks[trackIndex]!;
+  if (fits(track, clip.start, clipEnd(clip), clip.id)) {
+    return updateTrackAt(project, trackIndex, (t) => ({ ...t, clips: [...t.clips, clip] }));
+  }
+  return addTrackWith(project, track.kind, clip, trackIndex + 1);
+}
+
+function addTrackWith(project: Project, kind: TrackKind, clip: Clip, index: number): Project {
+  const track = { ...createTrack(kind), clips: [clip] };
+  const tracks = [...project.tracks];
+  tracks.splice(Math.max(1, index), 0, track);
+  return { ...project, tracks };
+}
+
+function fits(track: Track, start: Micros, end: Micros, ignoreId?: Id): boolean {
+  return track.clips.every((clip) => clip.id === ignoreId || clipEnd(clip) <= start || clip.start >= end);
+}
+
+function previousEnd(track: Track, clip: Clip): Micros {
+  let end = 0;
+  for (const other of track.clips) {
+    if (other.id !== clip.id && other.start < clip.start) end = Math.max(end, clipEnd(other));
+  }
+  return end;
+}
+
+function nextStart(track: Track, clip: Clip): Micros {
+  let start = Infinity;
+  for (const other of track.clips) {
+    if (other.id !== clip.id && other.start > clip.start) start = Math.min(start, other.start);
+  }
+  return start;
+}
+
+function replaceClip(project: Project, trackIndex: number, clip: Clip): Project {
+  return updateTrackAt(project, trackIndex, (track) => ({
+    ...track,
+    clips: track.clips.map((c) => (c.id === clip.id ? clip : c)),
+  }));
+}
+
+function updateTrackAt(project: Project, index: number, update: (track: Track) => Track): Project {
+  return { ...project, tracks: project.tracks.map((track, i) => (i === index ? update(track) : track)) };
+}
+
+function clampCrop(crop: Crop): Crop {
+  const left = clamp(crop.left, 0, 0.95);
+  const top = clamp(crop.top, 0, 0.95);
+  return {
+    left,
+    top,
+    right: clamp(crop.right, 0, 0.95 - left),
+    bottom: clamp(crop.bottom, 0, 0.95 - top),
+  };
+}
+
+function normalizeAngle(degrees: number): number {
+  const turned = ((degrees % 360) + 360) % 360;
+  return turned > 180 ? turned - 360 : turned;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}

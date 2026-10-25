@@ -1,6 +1,18 @@
 import type { Micros } from "../time";
-import type { Asset, Canvas, Clip, Id, Project, Track, TrackKind } from "./model";
-import { clipContains, clipEnd } from "./timing";
+import {
+  type Asset,
+  type Canvas,
+  type Clip,
+  IDENTITY_TRANSFORM,
+  type Id,
+  NO_CROP,
+  type Project,
+  type Track,
+  type TrackKind,
+} from "./model";
+
+/** How long a still image lasts when it's first added. */
+export const DEFAULT_STILL_DURATION: Micros = 5_000_000;
 
 export function createId(): Id {
   return crypto.randomUUID();
@@ -13,6 +25,7 @@ export function createProject(name: string, canvas: Canvas): Project {
     canvas,
     assets: {},
     tracks: [createTrack("video")],
+    markers: [],
   };
 }
 
@@ -27,35 +40,18 @@ export function createTrack(kind: TrackKind): Track {
   };
 }
 
-/** A clip that uses the whole asset at normal speed. */
+/** A clip that uses the whole asset at normal speed, or a still's default length. */
 export function createClip(asset: Asset, start: Micros): Clip {
+  const still = asset.kind === "image";
   return {
     id: createId(),
     assetId: asset.id,
     start,
-    sourceIn: asset.start,
-    sourceOut: asset.start + asset.duration,
+    sourceIn: still ? 0 : asset.start,
+    sourceOut: still ? DEFAULT_STILL_DURATION : asset.start + asset.duration,
     speed: 1,
+    volume: 1,
+    transform: IDENTITY_TRANSFORM,
+    crop: NO_CROP,
   };
-}
-
-/** Where the last clip on any track ends. */
-export function projectDuration(project: Project): Micros {
-  let end = 0;
-  for (const track of project.tracks) {
-    for (const clip of track.clips) end = Math.max(end, clipEnd(clip));
-  }
-  return end;
-}
-
-export function clipAt(track: Track, time: Micros): Clip | undefined {
-  return track.clips.find((clip) => clipContains(clip, time));
-}
-
-export function findClip(project: Project, clipId: Id): Clip | undefined {
-  for (const track of project.tracks) {
-    const clip = track.clips.find((c) => c.id === clipId);
-    if (clip) return clip;
-  }
-  return undefined;
 }

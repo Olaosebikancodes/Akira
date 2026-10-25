@@ -1,6 +1,6 @@
 import { type AudibleClip, audibleClips, clipAudio, playPlacedBuffer } from "../audio/schedule";
 import type { MediaFiles } from "../media/media-file";
-import { projectDuration } from "../project/create";
+import { projectDuration } from "../project/query";
 import type { Project } from "../project/model";
 import { Compositor } from "../render/compositor";
 import { FrameRenderer } from "../render/frame-renderer";

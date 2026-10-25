@@ -1,6 +1,6 @@
 import { VideoFrameCursor } from "../media/frame-cursor";
 import type { MediaFile, MediaFiles } from "../media/media-file";
-import { clipAt } from "../project/create";
+import { clipAt } from "../project/query";
 import type { Clip, Id, Project } from "../project/model";
 import { sourceTimeAt } from "../project/timing";
 import type { Micros } from "../time";
@@ -40,7 +40,8 @@ export class FrameRenderer {
         ),
       });
     }
-    this.compositor.render(parseHexColor(project.canvas.background), layers);
+    const { background } = project.canvas;
+    this.compositor.render(background.kind === "color" ? parseHexColor(background.color) : [0, 0, 0], layers);
   }
 
   /** Releases decoders for clips that are no longer in the project. */

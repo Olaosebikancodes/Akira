@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Clip } from "../project/model";
+import { type Clip, IDENTITY_TRANSFORM, NO_CROP } from "../project/model";
 import { placeAudioBuffer } from "./placement";
 
 // Uses source 2s-6s, placed at 1s on the timeline.
@@ -10,6 +10,9 @@ const clip: Clip = {
   sourceIn: 2_000_000,
   sourceOut: 6_000_000,
   speed: 1,
+  volume: 1,
+  transform: IDENTITY_TRANSFORM,
+  crop: NO_CROP,
 };
 
 describe("placeAudioBuffer", () => {
