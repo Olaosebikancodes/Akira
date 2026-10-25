@@ -59,6 +59,7 @@ export function projectWith(...tracks: { kind?: "video" | "audio"; clips: Clip[]
       kind: track.kind ?? "video",
       clips: track.clips,
       muted: false,
+      solo: false,
       hidden: false,
       locked: track.locked ?? false,
     })),

@@ -11,7 +11,7 @@ import {
   type QualityLevel,
 } from "mediabunny";
 import { MIX_CHANNELS, MIX_SAMPLE_RATE, renderAudioMix } from "../audio/mix";
-import { audioBufferToPcm, type PcmAudio, planar } from "../audio/pcm";
+import { type PcmAudio, planar } from "../audio/pcm";
 import { audibleClips } from "../audio/schedule";
 import type { MediaFiles } from "../media/media-file";
 import { projectDuration } from "../project/query";
@@ -93,7 +93,7 @@ export async function exportProject(
 
   const encodeAudio = async () => {
     if (!audioSource) return;
-    const mix = options.audio ?? audioBufferToPcm(await renderAudioMix(project, files, duration));
+    const mix = options.audio ?? (await renderAudioMix(project, files, duration));
     throwIfCancelled();
     const sample = new AudioSample({
       data: planar(mix),

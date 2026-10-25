@@ -1,6 +1,6 @@
 import type { QualityLevel } from "mediabunny";
 import { renderAudioMix } from "../audio/mix";
-import { audioBufferToPcm, type PcmAudio, pcmTransferables } from "../audio/pcm";
+import { type PcmAudio, pcmTransferables } from "../audio/pcm";
 import { audibleClips } from "../audio/schedule";
 import { ExportCancelledError, type ExportOptions, exportProject } from "../export/export";
 import { MediaFile, type MediaFiles } from "../media/media-file";
@@ -73,7 +73,7 @@ export async function exportInWorker(
 ): Promise<Blob> {
   const audio =
     audibleClips(project, files).length > 0
-      ? audioBufferToPcm(await renderAudioMix(project, files, projectDuration(project)))
+      ? await renderAudioMix(project, files, projectDuration(project))
       : null;
   if (options.signal?.aborted) throw new ExportCancelledError();
 

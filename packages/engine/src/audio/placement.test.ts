@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Clip, IDENTITY_TRANSFORM, NO_CROP } from "../project/model";
+import { type Clip, IDENTITY_TRANSFORM, NO_AUDIO_FILTERS, NO_CROP } from "../project/model";
 import { placeAudioBuffer } from "./placement";
 
 // Uses source 2s-6s, placed at 1s on the timeline.
@@ -11,6 +11,9 @@ const clip: Clip = {
   sourceOut: 6_000_000,
   speed: 1,
   volume: 1,
+  fadeIn: 0,
+  fadeOut: 0,
+  audioFilters: NO_AUDIO_FILTERS,
   transform: IDENTITY_TRANSFORM,
   crop: NO_CROP,
 };

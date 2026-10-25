@@ -76,6 +76,8 @@ export interface Track {
   kind: TrackKind;
   clips: Clip[];
   muted: boolean;
+  /** When any track is soloed, only soloed tracks are heard. */
+  solo: boolean;
   hidden: boolean;
   locked: boolean;
 }
@@ -97,6 +99,11 @@ export interface Clip {
   speed: number;
   /** Loudness multiplier: 0 is silent, 1 is as recorded. */
   volume: number;
+  /** How long the sound takes to rise from silence at the start. */
+  fadeIn: Micros;
+  /** How long the sound takes to fall to silence at the end. */
+  fadeOut: Micros;
+  audioFilters: AudioFilters;
   transform: Transform;
   crop: Crop;
   /** Set on freeze frames: the source time shown for the clip's whole length. */
@@ -121,6 +128,18 @@ export interface Transform {
   flipX: boolean;
   flipY: boolean;
 }
+
+/** Classic clean-up filters for a clip's sound. None of them is AI. */
+export interface AudioFilters {
+  /** Hiss reduction strength, 0 (off) to 1. */
+  denoise: number;
+  /** Mains hum to notch out: 50 Hz (Nigeria, Europe), 60 Hz (the Americas) or none. */
+  hum: 0 | 50 | 60;
+  /** Cut low rumble from wind, traffic and handling below about 80 Hz. */
+  rumble: boolean;
+}
+
+export const NO_AUDIO_FILTERS: AudioFilters = { denoise: 0, hum: 0, rumble: false };
 
 /** Fractions of the source frame removed from each edge, 0 to 1. */
 export interface Crop {

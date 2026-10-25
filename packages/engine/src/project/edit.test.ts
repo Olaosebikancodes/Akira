@@ -13,7 +13,10 @@ import {
   removeMarker,
   replaceClipAsset,
   rotateClip90,
+  setAudioFilters,
+  setClipFades,
   setClipSpeed,
+  setTrackFlag,
   splitClip,
   trimClip,
   updateClipLook,
@@ -361,5 +364,41 @@ describe("markers", () => {
     expect(project.markers.map((m) => m.time)).toEqual([S, 3 * S]);
     project = removeMarker(project, project.markers[0]!.id);
     expect(project.markers.map((m) => m.time)).toEqual([3 * S]);
+  });
+});
+
+describe("fades", () => {
+  const project = projectWith({ clips: [clip("a", VIDEO, 0, 4 * S)] });
+
+  it("keeps fades inside the clip, giving way to the fade already set", () => {
+    let faded = setClipFades(project, "a", { fadeOut: 3 * S });
+    faded = setClipFades(faded, "a", { fadeIn: 3 * S });
+    expect(findClip(faded, "a")).toMatchObject({ fadeIn: S, fadeOut: 3 * S });
+  });
+
+  it("leaves the outer fades on the outer pieces when splitting", () => {
+    const faded = setClipFades(setClipFades(project, "a", { fadeIn: S }), "a", { fadeOut: S });
+    const { project: split, rightId } = splitClip(faded, "a", 2 * S);
+    expect(findClip(split, "a")).toMatchObject({ fadeIn: S, fadeOut: 0 });
+    expect(findClip(split, rightId!)).toMatchObject({ fadeIn: 0, fadeOut: S });
+  });
+
+  it("shrinks fades that no longer fit after a trim", () => {
+    const faded = setClipFades(setClipFades(project, "a", { fadeIn: 2 * S }), "a", { fadeOut: 2 * S });
+    const trimmed = trimClip(faded, "a", "end", 2 * S);
+    expect(findClip(trimmed, "a")).toMatchObject({ fadeIn: S, fadeOut: S });
+  });
+});
+
+describe("audio filters and solo", () => {
+  it("clamps hiss reduction to 0-1 and keeps other filters", () => {
+    const project = projectWith({ clips: [clip("a", VIDEO, 0, S)] });
+    const filtered = setAudioFilters(setAudioFilters(project, "a", { hum: 50 }), "a", { denoise: 3 });
+    expect(findClip(filtered, "a")?.audioFilters).toEqual({ denoise: 1, hum: 50, rumble: false });
+  });
+
+  it("solos a track", () => {
+    const project = projectWith({ clips: [] }, { kind: "audio", clips: [] });
+    expect(setTrackFlag(project, "track1", "solo", true).tracks[1]?.solo).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import {
   type Clip,
   IDENTITY_TRANSFORM,
   type Id,
+  NO_AUDIO_FILTERS,
   NO_CROP,
   type Project,
   type Track,
@@ -35,6 +36,7 @@ export function createTrack(kind: TrackKind): Track {
     kind,
     clips: [],
     muted: false,
+    solo: false,
     hidden: false,
     locked: false,
   };
@@ -51,6 +53,9 @@ export function createClip(asset: Asset, start: Micros): Clip {
     sourceOut: still ? DEFAULT_STILL_DURATION : asset.start + asset.duration,
     speed: 1,
     volume: 1,
+    fadeIn: 0,
+    fadeOut: 0,
+    audioFilters: NO_AUDIO_FILTERS,
     transform: IDENTITY_TRANSFORM,
     crop: NO_CROP,
   };

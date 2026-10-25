@@ -11,11 +11,15 @@ export interface AudibleClip {
   sink: AudioBufferSink;
 }
 
-/** Clips that make sound: audible clips on unmuted tracks whose audio can be decoded. */
+/**
+ * Clips that make sound: audible clips whose audio can be decoded, on tracks
+ * that aren't muted. While any track is soloed, only soloed tracks play.
+ */
 export function audibleClips(project: Project, files: MediaFiles): AudibleClip[] {
+  const soloing = project.tracks.some((track) => track.solo);
   const result: AudibleClip[] = [];
   for (const track of project.tracks) {
-    if (track.muted) continue;
+    if (track.muted || (soloing && !track.solo)) continue;
     for (const clip of track.clips) {
       const sink = files.get(clip.assetId)?.audio;
       if (sink && isAudible(project, clip)) result.push({ clip, sink });

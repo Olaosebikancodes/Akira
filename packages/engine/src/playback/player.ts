@@ -1,4 +1,6 @@
+import { connectClipChain } from "../audio/chain";
 import { type AudibleClip, audibleClips, clipAudio, playPlacedBuffer } from "../audio/schedule";
+import { loadAudioWorklets } from "../audio/worklet";
 import type { MediaFiles } from "../media/media-file";
 import type { Project } from "../project/model";
 import { projectDuration } from "../project/query";
@@ -36,6 +38,9 @@ export interface PlayerOptions {
 export class Player {
   private readonly video: VideoOutput;
   private audioContext: AudioContext | null = null;
+  /** Everything the player sounds goes through here, so it can be muted, e.g. while recording. */
+  private master: GainNode | null = null;
+  private muted = false;
 
   private time: Micros = 0;
   private playing = false;
@@ -89,6 +94,12 @@ export class Player {
     const context = (this.audioContext ??= new AudioContext({ latencyHint: "interactive" }));
     // Browsers only let audio start from a user gesture, so resume before any other await.
     await context.resume();
+    await loadAudioWorklets(context);
+    if (!this.master) {
+      this.master = context.createGain();
+      this.master.gain.value = this.muted ? 0 : 1;
+      this.master.connect(context.destination);
+    }
 
     this.playing = true;
     this.startAudio(this.time);
@@ -114,6 +125,12 @@ export class Player {
       this.video.show(this.time);
     }
     this.events.onTimeUpdate?.(this.time);
+  }
+
+  /** Silences playback without stopping it, e.g. so a voiceover doesn't record the project. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    if (this.master) this.master.gain.value = muted ? 0 : 1;
   }
 
   async dispose(): Promise<void> {
@@ -149,6 +166,7 @@ export class Player {
     this.timelineOrigin = context.currentTime + START_DELAY_SECONDS - microsToSeconds(from);
     this.audioSession = new AudioSession(
       context,
+      this.master!,
       audibleClips(this.project, this.files),
       from,
       this.timelineOrigin,
@@ -182,6 +200,7 @@ class AudioSession {
 
   constructor(
     private readonly context: AudioContext,
+    destination: AudioNode,
     clips: AudibleClip[],
     readonly from: Micros,
     private readonly timelineOrigin: number,
@@ -189,7 +208,7 @@ class AudioSession {
     onError: (error: unknown) => void,
   ) {
     this.output = context.createGain();
-    this.output.connect(context.destination);
+    this.output.connect(destination);
     for (const clip of clips) this.stream(clip).catch(onError);
   }
 
@@ -201,20 +220,19 @@ class AudioSession {
   }
 
   private async stream(clip: AudibleClip): Promise<void> {
-    const gain = this.context.createGain();
-    gain.gain.value = clip.clip.volume;
-    gain.connect(this.output);
+    const chain = connectClipChain(this.context, this.output, clip.clip, this.timelineOrigin, this.from);
     for await (const placed of clipAudio(clip, this.from)) {
       if (this.stopped) return;
       await this.waitUntilNeeded(placed.placement.at);
       if (this.stopped) return;
 
+      // Filters that delay their output (hiss reduction) get their audio that much early.
       const node = playPlacedBuffer(
         this.context,
-        gain,
+        chain.input,
         placed,
         clip.clip.speed,
-        this.timelineOrigin,
+        this.timelineOrigin - chain.latency,
       );
       if (!node) continue;
       this.nodes.add(node);

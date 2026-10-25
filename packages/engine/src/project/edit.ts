@@ -1,6 +1,17 @@
 import { frameToMicros, type Micros } from "../time";
 import { createId, createTrack } from "./create";
-import { type Asset, type Clip, type Crop, IDENTITY_TRANSFORM, type Id, type Project, type Track, type TrackKind, type Transform } from "./model";
+import {
+  type Asset,
+  type AudioFilters,
+  type Clip,
+  type Crop,
+  IDENTITY_TRANSFORM,
+  type Id,
+  type Project,
+  type Track,
+  type TrackKind,
+  type Transform,
+} from "./model";
 import { assetOf, isStill, locateClip } from "./query";
 import { clipDuration, clipEnd, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
 
@@ -34,12 +45,13 @@ export function minClipDuration(project: Project): Micros {
 
 /**
  * Restores the invariants after an edit: the main track is packed from
- * zero in its current order, other tracks are sorted by start, and empty
- * tracks other than the main track are removed.
+ * zero in its current order, other tracks are sorted by start, fades fit
+ * inside their clips, and empty tracks other than the main track are
+ * removed.
  */
 export function normalize(project: Project): Project {
   const tracks = project.tracks
-    .map((track, index) => (index === 0 ? packTrack(track) : sortTrack(track)))
+    .map((track, index) => fitFades(index === 0 ? packTrack(track) : sortTrack(track)))
     .filter((track, index) => index === 0 || track.clips.length > 0);
   return { ...project, tracks };
 }
@@ -366,7 +378,32 @@ export function removeMarker(project: Project, markerId: Id): Project {
   return { ...project, markers: project.markers.filter((marker) => marker.id !== markerId) };
 }
 
-export type TrackFlag = "muted" | "hidden" | "locked";
+/** Sets how long a clip's sound takes to fade in and out. Fades are limited to the clip's length. */
+export function setClipFades(project: Project, clipId: Id, fades: { fadeIn?: Micros; fadeOut?: Micros }): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  const fadeIn = Math.max(0, Math.round(fades.fadeIn ?? clip.fadeIn));
+  const fadeOut = Math.max(0, Math.round(fades.fadeOut ?? clip.fadeOut));
+  // Whichever fade is being set gives way to the other, so dragging one never moves both.
+  const length = clipDuration(clip);
+  const next =
+    fades.fadeIn !== undefined
+      ? { fadeIn: Math.min(fadeIn, length - Math.min(fadeOut, length)), fadeOut: Math.min(fadeOut, length) }
+      : { fadeOut: Math.min(fadeOut, length - Math.min(fadeIn, length)), fadeIn: Math.min(fadeIn, length) };
+  return replaceClip(project, trackIndex, { ...clip, ...next });
+}
+
+export function setAudioFilters(project: Project, clipId: Id, filters: Partial<AudioFilters>): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  const audioFilters = { ...clip.audioFilters, ...filters };
+  audioFilters.denoise = clamp(audioFilters.denoise, 0, 1);
+  return replaceClip(project, trackIndex, { ...clip, audioFilters });
+}
+
+export type TrackFlag = "muted" | "solo" | "hidden" | "locked";
 
 export function setTrackFlag(project: Project, trackId: Id, flag: TrackFlag, value: boolean): Project {
   return {
@@ -387,16 +424,17 @@ function trackKindFor(project: Project, clip: Clip): TrackKind {
 
 /** Splits a clip into two pieces at `time`; the right piece gets a new id. */
 function cutAt(project: Project, clip: Clip, time: Micros): [Clip, Clip] {
+  // The left piece keeps the fade-in and the right the fade-out, so a cut never dips.
   if (isStill(project, clip)) {
     return [
-      { ...clip, sourceIn: 0, sourceOut: time - clip.start },
-      { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time },
+      { ...clip, sourceIn: 0, sourceOut: time - clip.start, fadeOut: 0 },
+      { ...clip, id: createId(), start: time, sourceIn: 0, sourceOut: clipEnd(clip) - time, fadeIn: 0 },
     ];
   }
   const cut = toSourceTime(clip, time);
   return [
-    { ...clip, sourceOut: cut },
-    { ...clip, id: createId(), start: time, sourceIn: cut },
+    { ...clip, sourceOut: cut, fadeOut: 0 },
+    { ...clip, id: createId(), start: time, sourceIn: cut, fadeIn: 0 },
   ];
 }
 
@@ -407,6 +445,19 @@ function packTrack(track: Track): Track {
     const placed = clip.start === time ? clip : ((changed = true), { ...clip, start: time });
     time += clipDuration(clip);
     return placed;
+  });
+  return changed ? { ...track, clips } : track;
+}
+
+/** Shortens fades that no longer fit their clip, e.g. after a trim or speed change. */
+function fitFades(track: Track): Track {
+  let changed = false;
+  const clips = track.clips.map((clip) => {
+    const length = clipDuration(clip);
+    if (clip.fadeIn + clip.fadeOut <= length) return clip;
+    changed = true;
+    const scale = length / (clip.fadeIn + clip.fadeOut);
+    return { ...clip, fadeIn: Math.floor(clip.fadeIn * scale), fadeOut: Math.floor(clip.fadeOut * scale) };
   });
   return changed ? { ...track, clips } : track;
 }
