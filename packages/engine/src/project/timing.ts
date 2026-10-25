@@ -20,14 +20,23 @@ export function clipContains(clip: Clip, time: Micros): boolean {
   return time >= clip.start && time < clipEnd(clip);
 }
 
+/** Maps a timeline time to source time. Not clamped to the clip. */
+export function toSourceTime(clip: Clip, time: Micros): Micros {
+  return clip.sourceIn + Math.round((time - clip.start) * clip.speed);
+}
+
+/** Maps a source time to timeline time. Not clamped to the clip. */
+export function toTimelineTime(clip: Clip, sourceTime: Micros): Micros {
+  return clip.start + Math.round((sourceTime - clip.sourceIn) / clip.speed);
+}
+
 /**
  * The source time to show when the playhead is at `time`. Clamped to the
  * clip's source range so callers never ask a decoder for a frame outside it.
  */
 export function sourceTimeAt(clip: Clip, time: Micros): Micros {
-  const offset = Math.round((time - clip.start) * clip.speed);
   return Math.min(
-    Math.max(clip.sourceIn + offset, clip.sourceIn),
+    Math.max(toSourceTime(clip, time), clip.sourceIn),
     clip.sourceOut - 1,
   );
 }
