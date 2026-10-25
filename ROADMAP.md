@@ -21,16 +21,16 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Browser tests in real Chrome: import, play, scrub, trim, export, re-import the export
 - [x] Run and verified end to end
 
-## 2. Timeline and layers
+## 2. Timeline and layers ✅
 
-- [ ] Timeline UI: tracks, clips, playhead, zoom, snapping, markers
-- [ ] Magnetic main track and ripple delete
-- [ ] Split, trim handles, duplicate, delete, replace, freeze frame, detach audio
-- [ ] Constant speed (0.25× to 4×), rotate 90°, flip, crop
-- [ ] Multi-select, undo/redo, keyboard shortcuts
-- [ ] Layers: picture-in-picture with on-canvas move, scale, rotate and opacity
-- [ ] Images and stickers (PNG, GIF, WebP), canvas background (colour, blur, image), aspect ratio presets
-- [ ] Decoding and export moved off the main thread into workers
+- [x] Timeline UI: tracks, clips, playhead, zoom, snapping, markers
+- [x] Magnetic main track and ripple delete
+- [x] Split, trim handles, duplicate, delete, replace, freeze frame, detach audio
+- [x] Constant speed (0.25× to 4×), rotate 90°, flip, crop
+- [x] Multi-select, undo/redo, keyboard shortcuts
+- [x] Layers: picture-in-picture with on-canvas move, scale, rotate and opacity
+- [x] Images and stickers (PNG, GIF, WebP), canvas background (colour, blur, image), aspect ratio presets
+- [x] Decoding and export moved off the main thread into workers
 
 ## 3. Audio
 
