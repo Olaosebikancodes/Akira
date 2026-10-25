@@ -1,7 +1,8 @@
 "use client";
 
-import { FilmStripIcon, type Icon, TextTIcon } from "@phosphor-icons/react";
+import { FilmStripIcon, type Icon, IntersectIcon, TextTIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, useId, useRef, useState } from "react";
+import { EffectsPanel } from "./effects-panel";
 import { MediaPanel } from "./media-panel";
 import { TextPanel } from "./text-panel";
 import { focusRing } from "./ui";
@@ -9,11 +10,12 @@ import { focusRing } from "./ui";
 const TABS = [
   { id: "media", label: "Media", icon: FilmStripIcon },
   { id: "text", label: "Text", icon: TextTIcon },
+  { id: "effects", label: "Effects", icon: IntersectIcon },
 ] as const satisfies readonly { id: string; label: string; icon: Icon }[];
 
 type TabId = (typeof TABS)[number]["id"];
 
-/** Media and Text, as tabs. Arrow keys move between tabs, as the ARIA tab pattern expects. */
+/** Media, Text and Effects, as tabs. Arrow keys move between tabs, as the ARIA tab pattern expects. */
 export function LeftPanel() {
   const [active, setActive] = useState<TabId>("media");
   const baseId = useId();
@@ -63,7 +65,7 @@ export function LeftPanel() {
         aria-labelledby={`${baseId}-${active}-tab`}
         className="flex min-h-0 flex-1 flex-col"
       >
-        {active === "media" ? <MediaPanel /> : <TextPanel />}
+        {active === "media" ? <MediaPanel /> : active === "text" ? <TextPanel /> : <EffectsPanel />}
       </div>
     </section>
   );

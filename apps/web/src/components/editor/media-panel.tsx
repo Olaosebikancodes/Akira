@@ -1,7 +1,7 @@
 "use client";
 
 import { type Asset, formatTimecode, FPS_30 } from "@akira/engine";
-import { ImageSquareIcon, MusicNotesSimpleIcon, PlusIcon, UploadSimpleIcon } from "@phosphor-icons/react";
+import { ImageSquareIcon, MusicNotesSimpleIcon, PaletteIcon, PlusIcon, UploadSimpleIcon } from "@phosphor-icons/react";
 import { type ChangeEvent, type DragEvent, useId, useState } from "react";
 import { addToTimeline } from "./actions";
 import { Bitmap } from "./bitmap";
@@ -9,7 +9,7 @@ import { importFiles, useEditor } from "./store";
 import { focusRing } from "./ui";
 
 export const ASSET_DRAG_TYPE = "application/x-akira-asset";
-const ACCEPT = "video/*,audio/*,image/*,.srt,.ttf,.otf,.woff,.woff2";
+const ACCEPT = "video/*,audio/*,image/*,.srt,.ttf,.otf,.woff,.woff2,.cube";
 
 export function MediaPanel() {
   const assets = useEditor((s) => s.project.assets);
@@ -56,7 +56,7 @@ export function MediaPanel() {
 
       {list.length === 0 && importing === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <p className="text-[13px] text-muted">Drop video, audio, images, fonts or captions here.</p>
+          <p className="text-[13px] text-muted">Drop video, audio, images, fonts, captions or LUTs here.</p>
           <p className="text-xs text-subtle">Files open on this device and are never uploaded.</p>
         </div>
       ) : (
@@ -90,6 +90,20 @@ function MediaTile({ asset }: { asset: Asset }) {
           aria-hidden
         >
           Aa
+        </div>
+        <p className="truncate text-xs text-muted" title={asset.name}>
+          {asset.name}
+        </p>
+      </li>
+    );
+  }
+
+  if (asset.lut) {
+    // LUTs are applied to clips from the Effects tab or the inspector.
+    return (
+      <li className="flex min-w-0 flex-col gap-1.5">
+        <div className="grid aspect-video place-items-center rounded-md bg-raised" aria-hidden>
+          <PaletteIcon size={22} className="text-accent" />
         </div>
         <p className="truncate text-xs text-muted" title={asset.name}>
           {asset.name}

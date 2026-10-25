@@ -20,6 +20,7 @@ import { addToTimeline } from "../actions";
 import { ASSET_DRAG_TYPE } from "../media-panel";
 import { beginGesture, endGesture, seek, select, setZoom, updateGesture, useEditor } from "../store";
 import { ClipItem } from "./clip-item";
+import { TransitionMarks } from "./transition-marks";
 import {
   HEADER_WIDTH,
   RULER_HEIGHT,
@@ -284,6 +285,7 @@ export function Timeline() {
                       onPointerDown={onClipPointerDown}
                     />
                   ))}
+                  <TransitionMarks track={row.track} zoom={zoom} height={row.height} />
                   {row.isMain && empty && (
                     <p className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-xs text-subtle">
                       Drag media here, or press + on a file.
