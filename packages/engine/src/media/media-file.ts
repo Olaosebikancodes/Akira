@@ -98,7 +98,9 @@ export class MediaFile {
       throw new UnsupportedMediaError(`${name} has no video or audio Akira can use.`);
     }
 
-    const tracks = [videoTrack, usableAudio].filter((track) => track !== null);
+    // A video's length is its picture. Audio often runs a few milliseconds
+    // past the last frame (AAC padding), which would leave a black frame.
+    const tracks = videoTrack ? [videoTrack] : [usableAudio!];
     const [firstTimestamp, endTimestamp] = await Promise.all([
       input.getFirstTimestamp(tracks),
       input.computeDuration(tracks),
