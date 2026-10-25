@@ -1,6 +1,6 @@
 "use client";
 
-import { clipAt, isStill, locateClip, mainTrack } from "@akira/engine";
+import { clipAt, isStill, locateClip, mainTrack, wallClock } from "@akira/engine";
 import {
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
@@ -10,13 +10,15 @@ import {
   MagnetStraightIcon,
   MagnifyingGlassMinusIcon,
   MagnifyingGlassPlusIcon,
+  MicrophoneIcon,
   ScissorsIcon,
   SnowflakeIcon,
+  StopIcon,
   SwapIcon,
   TrashIcon,
   WaveformIcon,
 } from "@phosphor-icons/react";
-import { type ChangeEvent, useId } from "react";
+import { type ChangeEvent, useEffect, useId, useState } from "react";
 import {
   deleteSelection,
   detachSelectedAudio,
@@ -24,6 +26,8 @@ import {
   freezeAtPlayhead,
   replaceSelected,
   splitAtPlayhead,
+  startVoiceover,
+  stopVoiceover,
   toggleMarkerAtPlayhead,
   zoomToFit,
 } from "../actions";
@@ -42,6 +46,7 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
   const project = useEditor((s) => s.project);
   const targetId = useEditor((s) => s.selection[0] ?? clipAt(mainTrack(s.project), s.time)?.id ?? null);
   const hasSelection = useEditor((s) => s.selection.length > 0);
+  const recording = useEditor((s) => s.recording !== null);
   const target = targetId ? locateClip(project, targetId) : undefined;
   const targetAsset = target && project.assets[target.clip.assetId];
   const isMoving = target ? !isStill(project, target.clip) : false;
@@ -76,6 +81,12 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
         </label>
         <Divider />
         <IconButton icon={BookmarkSimpleIcon} label="Add or remove marker" shortcut="M" onClick={toggleMarkerAtPlayhead} />
+        <Divider />
+        {recording ? (
+          <RecordingIndicator />
+        ) : (
+          <IconButton icon={MicrophoneIcon} label="Record voiceover" onClick={() => void startVoiceover()} />
+        )}
       </div>
 
       <div className="flex items-center gap-1">
@@ -101,6 +112,28 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
         <IconButton icon={MagnifyingGlassPlusIcon} label="Zoom in" shortcut="=" onClick={() => setZoom(zoom * 1.5)} />
         <IconButton icon={ArrowsOutLineHorizontalIcon} label="Zoom to fit" shortcut="Shift+Z" onClick={() => zoomToFit(viewWidth)} />
       </div>
+    </div>
+  );
+}
+
+/** Shown while a voiceover records: elapsed time and the way to stop. */
+function RecordingIndicator() {
+  const startedAt = useEditor((s) => s.recording?.take.startedAt ?? 0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed(Math.max(0, wallClock() - startedAt)), 250);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  const seconds = Math.floor(elapsed / 1000);
+  return (
+    <div className="flex items-center gap-2 pl-1" role="status" aria-label="Recording voiceover">
+      <span aria-hidden className="size-2 rounded-full bg-accent motion-safe:animate-pulse" />
+      <span className="font-mono text-xs tabular-nums text-foreground">
+        {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+      </span>
+      <IconButton icon={StopIcon} label="Stop recording" onClick={() => void stopVoiceover()} />
     </div>
   );
 }

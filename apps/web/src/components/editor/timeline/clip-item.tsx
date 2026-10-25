@@ -4,13 +4,17 @@ import {
   type Asset,
   type Clip,
   clipDuration,
+  clipGainAt,
   clipEnd,
   type Edge,
   formatTimecode,
   FPS_30,
   type Id,
+  peakBetween,
   sourceTimeAt,
   type Thumbnail,
+  toSourceTime,
+  type Waveform,
 } from "@akira/engine";
 import { SnowflakeIcon, SpeakerSimpleSlashIcon } from "@phosphor-icons/react";
 import { memo, type PointerEvent, useEffect, useRef } from "react";
@@ -32,6 +36,7 @@ interface ClipItemProps {
 
 export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, selected, locked, onPointerDown }: ClipItemProps) {
   const thumbnails = useEditor((s) => s.thumbnails.get(asset.id));
+  const waveform = useEditor((s) => s.waveforms.get(asset.id));
   const left = timeToX(clip.start, zoom);
   const width = Math.max(2, timeToX(clipDuration(clip), zoom));
   const frozen = clip.freezeAt !== undefined;
@@ -45,6 +50,9 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
           : "var(--clip-video)";
   const rate = asset.video?.frameRate ?? FPS_30;
   const silent = clip.volume === 0 && asset.audio !== undefined && !frozen;
+  const clipHeight = height - 9;
+  // Audio clips are all waveform; video clips with sound get a strip along the bottom.
+  const waveHeight = asset.kind === "audio" ? clipHeight : Math.round(clipHeight * 0.32);
 
   return (
     <button
@@ -61,8 +69,9 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
       style={{ left, width, height: height - 9, background: color }}
     >
       {thumbnails && asset.kind !== "audio" && (
-        <Filmstrip clip={clip} asset={asset} thumbnails={thumbnails} zoom={zoom} width={width} height={height - 9} />
+        <Filmstrip clip={clip} asset={asset} thumbnails={thumbnails} zoom={zoom} width={width} height={clipHeight} />
       )}
+      {waveform && !frozen && <WaveformStrip clip={clip} waveform={waveform} zoom={zoom} width={width} height={waveHeight} />}
       <span className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/55 to-transparent px-1.5 pb-2 pt-0.5 text-[11px] font-medium leading-tight text-foreground">
         {frozen && <SnowflakeIcon size={11} aria-hidden className="shrink-0" />}
         {silent && <SpeakerSimpleSlashIcon size={11} aria-hidden className="shrink-0" />}
@@ -136,6 +145,58 @@ function Filmstrip({
   }, [clip, asset.kind, thumbnails, zoom, width, height]);
 
   return <canvas ref={ref} aria-hidden className="pointer-events-none absolute inset-0 size-full opacity-80" />;
+}
+
+/**
+ * The clip's sound as a waveform, each column scaled by the clip's gain at
+ * that moment, so volume and fades show up as the shape of the wave. Heights
+ * use the square root of the level, as many audio editors do, so quiet
+ * speech is still visible.
+ */
+function WaveformStrip({
+  clip,
+  waveform,
+  zoom,
+  width,
+  height,
+}: {
+  clip: Clip;
+  waveform: Waveform;
+  zoom: number;
+  width: number;
+  height: number;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current!;
+    const ratio = devicePixelRatio;
+    const pixelWidth = Math.min(MAX_FILMSTRIP_PIXELS, Math.max(1, Math.round(width * ratio)));
+    const pixelHeight = Math.max(1, Math.round(height * ratio));
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = getComputedStyle(canvas).color;
+    const stretch = pixelWidth / (width * ratio);
+    const column = Math.max(1, Math.round(ratio));
+    for (let x = 0; x < pixelWidth; x += column) {
+      const from = clip.start + xToTime(x / ratio / stretch, zoom);
+      const to = clip.start + xToTime((x + column) / ratio / stretch, zoom);
+      const peak = peakBetween(waveform, toSourceTime(clip, from), toSourceTime(clip, to)) * clipGainAt(clip, from);
+      const bar = Math.max(column, Math.sqrt(Math.min(1, peak)) * pixelHeight);
+      context.fillRect(x, pixelHeight - bar, column, bar);
+    }
+  }, [clip, waveform, zoom, width, height]);
+
+  return (
+    <canvas
+      ref={ref}
+      data-waveform
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-0 w-full text-waveform"
+      style={{ height }}
+    />
+  );
 }
 
 function nearest(thumbnails: Thumbnail[], time: number): Thumbnail {

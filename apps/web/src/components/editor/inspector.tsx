@@ -23,7 +23,12 @@ import {
   type Project,
   rotateClip90,
   setAspect,
+  setAudioFilters,
+  setClipFades,
   setClipSpeed,
+  clipDuration,
+  microsToSeconds,
+  secondsToMicros,
   updateClipLook,
 } from "@akira/engine";
 import { ArrowClockwiseIcon, FlipHorizontalIcon, FlipVerticalIcon } from "@phosphor-icons/react";
@@ -136,21 +141,91 @@ function ClipInspector({ project, clip, isVisual, locked }: { project: Project; 
         </Section>
       )}
 
-      {!still && asset.audio && (
-        <Section title="Audio">
-          <SliderField
-            label="Volume"
-            unit="%"
-            value={clip.volume * 100}
-            min={0}
-            max={200}
-            step={1}
-            onChange={(v) => look({ volume: v / 100 })}
-            onCommit={endGesture}
-          />
-        </Section>
-      )}
+      {!still && asset.audio && <AudioSection clip={clip} />}
     </div>
+  );
+}
+
+function AudioSection({ clip }: { clip: Clip }) {
+  const longest = Math.min(10, microsToSeconds(clipDuration(clip)));
+  const { denoise, hum, rumble } = clip.audioFilters;
+  const rumbleId = useId();
+
+  return (
+    <>
+      <Section title="Audio">
+        <SliderField
+          label="Volume"
+          unit="%"
+          value={clip.volume * 100}
+          min={0}
+          max={200}
+          step={1}
+          onChange={(v) => live((p) => updateClipLook(p, clip.id, { volume: v / 100 }))}
+          onCommit={endGesture}
+        />
+        <SliderField
+          label="Fade in"
+          unit="s"
+          value={microsToSeconds(clip.fadeIn)}
+          min={0}
+          max={longest}
+          step={0.1}
+          onChange={(v) => live((p) => setClipFades(p, clip.id, { fadeIn: secondsToMicros(v) }))}
+          onCommit={endGesture}
+        />
+        <SliderField
+          label="Fade out"
+          unit="s"
+          value={microsToSeconds(clip.fadeOut)}
+          min={0}
+          max={longest}
+          step={0.1}
+          onChange={(v) => live((p) => setClipFades(p, clip.id, { fadeOut: secondsToMicros(v) }))}
+          onCommit={endGesture}
+        />
+      </Section>
+
+      <Section title="Clean up">
+        <SliderField
+          label="Reduce hiss"
+          unit="%"
+          value={denoise * 100}
+          min={0}
+          max={100}
+          step={5}
+          onChange={(v) => live((p) => setAudioFilters(p, clip.id, { denoise: v / 100 }))}
+          onCommit={endGesture}
+        />
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted">Remove hum</span>
+          <Segmented
+            label="Remove hum"
+            value={String(hum)}
+            options={[
+              { value: "0", label: "Off" },
+              { value: "50", label: "50 Hz" },
+              { value: "60", label: "60 Hz" },
+            ]}
+            onChange={(v) => commit((p) => setAudioFilters(p, clip.id, { hum: Number(v) as 0 | 50 | 60 }))}
+          />
+          <p className="text-[11px] text-subtle">Electrical buzz. Nigeria and Europe use 50 Hz, the Americas 60 Hz.</p>
+        </div>
+        <label htmlFor={rumbleId} className="flex cursor-pointer items-center justify-between gap-3">
+          <span className="flex flex-col">
+            <span className="text-xs text-muted">Cut rumble</span>
+            <span className="text-[11px] text-subtle">Wind, traffic and handling noise.</span>
+          </span>
+          <input
+            id={rumbleId}
+            type="checkbox"
+            checked={rumble}
+            onChange={(event) => commit((p) => setAudioFilters(p, clip.id, { rumble: event.target.checked }))}
+            className={`size-4 cursor-pointer accent-accent ${focusRing}`}
+          />
+        </label>
+      </Section>
+    </>
   );
 }
 

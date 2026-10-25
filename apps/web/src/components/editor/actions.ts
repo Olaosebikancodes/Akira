@@ -24,7 +24,8 @@ import {
   splitClip,
   trimClip,
 } from "@akira/engine";
-import { commit, importFiles, seek, select, setZoom, useEditor } from "./store";
+import { startRecording } from "./recorder";
+import { commit, importFiles, notify, seek, select, setZoom, useEditor } from "./store";
 
 const get = useEditor.getState;
 
@@ -147,6 +148,57 @@ export function addToTimeline(asset: Asset, placement?: { trackId?: Id; time: nu
     return next;
   });
   select([clip.id]);
+}
+
+/**
+ * Records the microphone while the timeline plays from the playhead, with
+ * the project muted so it isn't picked up.
+ */
+export async function startVoiceover(): Promise<void> {
+  const { player, time, recording, project } = get();
+  if (recording) return;
+  // Unlock audio now: the microphone prompt can outlast the browser's click allowance.
+  player?.prepareAudio();
+  const takes = Object.values(project.assets).filter((asset) => asset.name.startsWith("Voiceover")).length;
+  let take;
+  try {
+    take = await startRecording(`Voiceover ${takes + 1}`);
+  } catch (error) {
+    notify({ kind: "error", message: microphoneProblem(error) });
+    return;
+  }
+  player?.setMuted(true);
+  await player?.play();
+  useEditor.setState({ recording: { from: time, heardAt: player?.heardAt(time) ?? null, take } });
+}
+
+/** Stops recording and puts the take on an audio track, lined up with what was playing. */
+export async function stopVoiceover(): Promise<void> {
+  const { recording, player } = get();
+  if (!recording) return;
+  useEditor.setState({ recording: null });
+  player?.pause();
+  player?.setMuted(false);
+
+  const file = await recording.take.stop();
+  const [asset] = await importFiles([file]);
+  if (!asset) return;
+  // The mic and the speakers start at slightly different moments; shift the take by the difference.
+  const offset = recording.heardAt === null ? 0 : Math.round((recording.take.startedAt - recording.heardAt) * 1000);
+  const start = recording.from + offset;
+  let clip = createClip(asset, 0);
+  if (start < 0) clip = { ...clip, sourceIn: clip.sourceIn - start };
+  commit((project) => insertClip(project, clip, { time: Math.max(0, start) }));
+  select([clip.id]);
+}
+
+function microphoneProblem(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError") {
+    return "Akira needs permission to use your microphone. Allow it in your browser's site settings, then try again.";
+  }
+  if (name === "NotFoundError") return "No microphone was found. Connect one, then try again.";
+  return `The microphone couldn't start: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 export function stepFrames(frames: number): void {

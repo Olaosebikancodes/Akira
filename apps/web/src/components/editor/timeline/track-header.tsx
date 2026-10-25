@@ -4,6 +4,7 @@ import { setTrackFlag, type TrackFlag } from "@akira/engine";
 import {
   EyeIcon,
   EyeSlashIcon,
+  HeadphonesIcon,
   type Icon,
   LockIcon,
   LockOpenIcon,
@@ -42,6 +43,13 @@ export function TrackHeader({ row }: { row: Row }) {
           offIcon={SpeakerSimpleHighIcon}
           label={`${track.muted ? "Unmute" : "Mute"} ${name.toLowerCase()} track`}
           onClick={() => toggle("muted")}
+        />
+        <Toggle
+          on={track.solo}
+          onIcon={HeadphonesIcon}
+          offIcon={HeadphonesIcon}
+          label={`${track.solo ? "Unsolo" : "Solo"} ${name.toLowerCase()} track`}
+          onClick={() => toggle("solo")}
         />
         <Toggle
           on={track.locked}

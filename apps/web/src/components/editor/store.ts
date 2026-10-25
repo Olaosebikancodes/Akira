@@ -2,6 +2,7 @@
 
 import {
   type Asset,
+  computeWaveform,
   createId,
   createProject,
   createThumbnails,
@@ -12,8 +13,10 @@ import {
   type Player,
   type Project,
   type Thumbnail,
+  type Waveform,
 } from "@akira/engine";
 import { create } from "zustand";
+import type { Recording } from "./recorder";
 
 /** Undo steps kept. Projects share structure, so each step costs little. */
 const HISTORY_LIMIT = 200;
@@ -23,6 +26,15 @@ export const MAX_ZOOM = 600;
 const FILMSTRIP_HEIGHT = 96;
 
 export type Edit = (project: Project) => Project;
+
+/** A voiceover being recorded over playback. */
+export interface VoiceoverSession {
+  /** Where the playhead was when recording started. */
+  from: Micros;
+  /** Wall-clock time `from` was heard, to line the take up; null if nothing was playing. */
+  heardAt: number | null;
+  take: Recording;
+}
 
 export interface Notice {
   kind: "error" | "warning";
@@ -46,7 +58,9 @@ interface EditorState {
   /** Opened media, by asset id. Kept outside the project because it can't be serialised. */
   files: ReadonlyMap<Id, MediaFile>;
   thumbnails: ReadonlyMap<Id, Thumbnail[]>;
+  waveforms: ReadonlyMap<Id, Waveform>;
   importing: number;
+  recording: VoiceoverSession | null;
   notices: Notice[];
   player: Player | null;
 }
@@ -68,7 +82,9 @@ export const useEditor = create<EditorState>(() => ({
   snapping: true,
   files: new Map(),
   thumbnails: new Map(),
+  waveforms: new Map(),
   importing: 0,
+  recording: null,
   notices: [],
   player: null,
 }));
@@ -197,6 +213,7 @@ export async function importFiles(files: readonly File[]): Promise<Asset[]> {
       for (const message of media.warnings) notify({ kind: "warning", message });
       added.push(asset);
       void loadThumbnails(asset, media);
+      void loadWaveform(asset, media);
     } catch (error) {
       notify({ kind: "error", message: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -221,6 +238,19 @@ function addAsset(asset: Asset, media: MediaFile): void {
     gestureStart: gestureStart && withAsset(gestureStart),
     files: nextFiles,
   });
+}
+
+async function loadWaveform(asset: Asset, media: MediaFile): Promise<void> {
+  if (!asset.audio) return;
+  try {
+    const waveform = await computeWaveform(media);
+    if (!waveform) return;
+    const next = new Map(get().waveforms);
+    next.set(asset.id, waveform);
+    set({ waveforms: next });
+  } catch {
+    // Like thumbnails, a waveform is a nicety; the clip still plays without it.
+  }
 }
 
 async function loadThumbnails(asset: Asset, media: MediaFile): Promise<void> {

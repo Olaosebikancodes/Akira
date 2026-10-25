@@ -1,6 +1,6 @@
 import type { Id, Micros, Project, Track } from "@akira/engine";
 
-export const HEADER_WIDTH = 120;
+export const HEADER_WIDTH = 164;
 export const RULER_HEIGHT = 28;
 /** Breathing room after the last clip, so there's always somewhere to drop. */
 export const TAIL_SECONDS = 30;
