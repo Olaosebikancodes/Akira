@@ -122,38 +122,50 @@ export function deleteTarget(gl: WebGL2RenderingContext, target: Target): void {
   gl.deleteTexture(target.texture);
 }
 
+/** Frames a spare target is kept for. Sizes change constantly while a layer is being scaled. */
+const SPARE_FRAMES = 30;
+
 /**
  * Hands out scratch targets by size and takes them all back at the end of
  * each frame, so per-layer processing doesn't allocate textures every frame.
+ * Spares that go unused for a while are freed.
  */
 export class TargetPool {
-  private readonly free = new Map<string, Target[]>();
+  private readonly free = new Map<string, { target: Target; frame: number }[]>();
   private readonly lent: Target[] = [];
+  private frame = 0;
 
   constructor(private readonly gl: WebGL2RenderingContext) {}
 
   acquire(width: number, height: number): Target {
     const w = Math.max(1, Math.round(width));
     const h = Math.max(1, Math.round(height));
-    const target = this.free.get(`${w}x${h}`)?.pop() ?? createTarget(this.gl, w, h);
+    const target = this.free.get(`${w}x${h}`)?.pop()?.target ?? createTarget(this.gl, w, h);
     this.lent.push(target);
     return target;
   }
 
-  /** Returns every target handed out this frame. */
+  /** Returns every target handed out this frame, and frees spares that have sat unused. */
   releaseAll(): void {
+    this.frame++;
     for (const target of this.lent.splice(0)) {
       const key = `${target.width}x${target.height}`;
       const list = this.free.get(key) ?? [];
-      list.push(target);
+      list.push({ target, frame: this.frame });
       this.free.set(key, list);
+    }
+    for (const [key, list] of this.free) {
+      const kept = list.filter((spare) => this.frame - spare.frame <= SPARE_FRAMES);
+      for (const spare of list) if (!kept.includes(spare)) deleteTarget(this.gl, spare.target);
+      if (kept.length > 0) this.free.set(key, kept);
+      else this.free.delete(key);
     }
   }
 
   /** Frees everything, e.g. when the canvas changes size. */
   clear(): void {
     this.releaseAll();
-    for (const list of this.free.values()) for (const target of list) deleteTarget(this.gl, target);
+    for (const list of this.free.values()) for (const spare of list) deleteTarget(this.gl, spare.target);
     this.free.clear();
   }
 }

@@ -191,12 +191,13 @@ export type BlendMode =
 
 export type MaskShape = "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star";
 
-/** A shape that shows part of a clip. Sizes and positions are fractions of the clip's picture. */
+/** A shape that shows part of a clip. */
 export interface Mask {
   shape: MaskShape;
-  /** Centre offset from the picture's centre. */
+  /** Centre offset from the picture's centre, as fractions of its width and height. */
   x: number;
   y: number;
+  /** Size as fractions of the picture's height, so equal values make a true circle or square. */
   width: number;
   height: number;
   /** Degrees clockwise. */

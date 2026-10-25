@@ -63,7 +63,7 @@ float maskDistance(vec2 uv) {
   float c = cos(u_maskRotation);
   float s = sin(u_maskRotation);
   p = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
-  vec2 halfSize = u_maskSize * vec2(u_aspect, 1.0) * 0.5;
+  vec2 halfSize = u_maskSize * 0.5;
   if (u_maskShape == 1) return -p.y;
   if (u_maskShape == 2) return abs(p.y) - halfSize.y;
   if (u_maskShape == 3) return (length(p / halfSize) - 1.0) * min(halfSize.x, halfSize.y);
@@ -118,7 +118,7 @@ uniform vec4 u_crop;          // left, top, visible width, visible height of the
 uniform float u_aspect;       // picture width / height
 uniform int u_maskShape;      // 0 for no mask
 uniform vec2 u_maskCenter;    // in picture coordinates, 0 to 1
-uniform vec2 u_maskSize;      // fractions of picture width and height
+uniform vec2 u_maskSize;      // fractions of picture height, so equal values make a circle
 uniform float u_maskRotation; // radians
 uniform float u_maskFeather;
 uniform bool u_maskInvert;
