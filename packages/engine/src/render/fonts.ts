@@ -31,9 +31,14 @@ export function setFontBaseUrl(url: string): void {
   fontBaseUrl = url;
 }
 
-/** The fonts the current thread draws with: the page's document fonts, or a worker's own. */
+/**
+ * The fonts the current thread draws with: the page's document fonts, or a
+ * worker's own. Pages must use `document.fonts`: `window.fonts` can be any
+ * element with id="fonts", since ids become globals.
+ */
 function fontSet(): FontFaceSet {
-  return (globalThis as { fonts?: FontFaceSet }).fonts ?? document.fonts;
+  if (typeof document !== "undefined") return document.fonts;
+  return (globalThis as unknown as { fonts: FontFaceSet }).fonts;
 }
 
 export function isFontFile(file: File): boolean {

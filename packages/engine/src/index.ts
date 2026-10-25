@@ -21,7 +21,7 @@ export * from "./project/query";
 export * from "./project/snap";
 export * from "./project/timing";
 export { animatedLook } from "./render/animation";
-export { BUILT_IN_FONTS, ensureFont, isFontFile, setFontBaseUrl } from "./render/fonts";
+export { BUILT_IN_FONTS, ensureFont, fontShorthand, isFontFile, setFontBaseUrl } from "./render/fonts";
 export { coverScale, type LayerGeometry, layerGeometry, type Point, pointInQuad } from "./render/geometry";
 export { measureText } from "./render/text";
 export * from "./time";
