@@ -19,7 +19,7 @@ export interface Canvas {
   width: number;
   height: number;
   frameRate: FrameRate;
-  /** CSS colour shown wherever no clip covers the frame. */
+  /** `#rrggbb` colour shown wherever no clip covers the frame. */
   background: string;
 }
 
@@ -30,14 +30,15 @@ export interface Asset {
   id: Id;
   kind: AssetKind;
   name: string;
+  /** Source time of the first frame or sample. Usually 0, but not always. */
+  start: Micros;
   /** Zero for still images, which last as long as their clip. */
   duration: Micros;
   video?: {
+    /** Size as displayed, after the file's rotation is applied. */
     width: number;
     height: number;
     frameRate: FrameRate;
-    /** Clockwise rotation the file asks players to apply, e.g. phone footage. */
-    rotation: 0 | 90 | 180 | 270;
   };
   audio?: {
     sampleRate: number;
