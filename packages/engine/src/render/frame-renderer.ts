@@ -4,9 +4,12 @@ import type { Clip, Id, Project } from "../project/model";
 import { clipAt } from "../project/query";
 import { sourceTimeAt } from "../project/timing";
 import type { Micros } from "../time";
+import { animatedLook } from "./animation";
 import { parseHexColor } from "./color";
 import type { BackgroundFill, Compositor, Layer, Picture } from "./compositor";
 import { layerGeometry } from "./geometry";
+import { MAX_FONT_SIZE, rasterizeText } from "./text";
+import { revealedCharacters } from "./text-layout";
 
 const BLACK: BackgroundFill = { kind: "color", color: [0, 0, 0] };
 
@@ -20,6 +23,8 @@ const BLACK: BackgroundFill = { kind: "color", color: [0, 0, 0] };
 export class FrameRenderer {
   private readonly cursors = new Map<Id, VideoFrameCursor>();
   private readonly cachedImages = new Set<Id>();
+  /** Each text clip's latest drawing, kept until its words, look or size change. */
+  private readonly textRasters = new Map<Id, { key: string; canvas: OffscreenCanvas; scale: number }>();
 
   constructor(private readonly compositor: Compositor) {}
 
@@ -33,10 +38,16 @@ export class FrameRenderer {
       for (const [index, track] of project.tracks.entries()) {
         if (track.kind !== "video" || track.hidden) continue;
         const clip = clipAt(track, time);
-        const file = clip && files.get(clip.assetId);
-        if (!clip || !file) continue;
+        if (!clip) continue;
+        const look = animatedLook(clip, time);
 
-        const picture = await this.pictureFor(clip, file, time, opened);
+        let picture: Picture | null = null;
+        if (clip.text) {
+          picture = await this.textPicture(clip, look.reveal);
+        } else {
+          const file = files.get(clip.assetId);
+          picture = file ? await this.pictureFor(clip, file, time, opened) : null;
+        }
         if (!picture) continue;
         if (index === 0) mainPicture = picture;
         const geometry = layerGeometry({
@@ -44,12 +55,13 @@ export class FrameRenderer {
           displayHeight: picture.displayHeight,
           rotation: picture.rotation,
           flip: picture.flip,
-          transform: clip.transform,
+          transform: look.transform,
           crop: clip.crop,
           canvasWidth: this.compositor.width,
           canvasHeight: this.compositor.height,
+          fit: clip.text ? "natural" : "contain",
         });
-        layers.push({ picture, model: geometry.model, texture: geometry.texture, opacity: clip.transform.opacity });
+        layers.push({ picture, model: geometry.model, texture: geometry.texture, opacity: look.transform.opacity });
       }
 
       const background = await this.backgroundFor(project, files, mainPicture);
@@ -71,6 +83,11 @@ export class FrameRenderer {
       if (project.assets[assetId]) continue;
       this.cachedImages.delete(assetId);
       this.compositor.release(imageKey(assetId));
+    }
+    for (const [clipId, raster] of this.textRasters) {
+      if (live.has(clipId)) continue;
+      this.textRasters.delete(clipId);
+      this.compositor.release(raster.key);
     }
   }
 
@@ -95,6 +112,35 @@ export class FrameRenderer {
       displayHeight: sample.displayHeight,
       rotation: sample.rotation,
       flip: sample.flip,
+    };
+  }
+
+  /**
+   * Draws text at the size it appears on screen, so scaled-up text stays
+   * sharp. Animations scale the finished drawing instead, so a "pop" doesn't
+   * redraw the text every frame.
+   */
+  private async textPicture(clip: Clip, reveal: number): Promise<Picture> {
+    const text = clip.text!;
+    const shortEdge = Math.min(this.compositor.width, this.compositor.height);
+    const baseSize = text.style.size * shortEdge;
+    const scale = Math.min(Math.max(clip.transform.scale, 0.05), MAX_FONT_SIZE / baseSize);
+    const shown = revealedCharacters(text.content, reveal);
+    const key = `text:${clip.id}:${(baseSize * scale).toFixed(1)}:${shown}:${JSON.stringify(text)}`;
+
+    let raster = this.textRasters.get(clip.id);
+    if (raster?.key !== key) {
+      if (raster) this.compositor.release(raster.key);
+      raster = { key, canvas: await rasterizeText(text, baseSize * scale, reveal), scale };
+      this.textRasters.set(clip.id, raster);
+    }
+    return {
+      source: raster.canvas,
+      displayWidth: raster.canvas.width / raster.scale,
+      displayHeight: raster.canvas.height / raster.scale,
+      rotation: 0,
+      flip: false,
+      cacheKey: raster.key,
     };
   }
 

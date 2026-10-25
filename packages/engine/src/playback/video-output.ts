@@ -109,10 +109,11 @@ export class WorkerVideoOutput implements VideoOutput {
     canvas: HTMLCanvasElement,
     project: Project,
     files: MediaFiles,
+    fontBaseUrl: string,
     onError: (error: unknown) => void,
   ) {
     const offscreen = canvas.transferControlToOffscreen();
-    this.post({ type: "init", canvas: offscreen }, [offscreen]);
+    this.post({ type: "init", canvas: offscreen, fontBaseUrl }, [offscreen]);
     worker.addEventListener("message", (event: MessageEvent<RenderEvent>) => {
       if (event.data.type === "error") onError(new Error(event.data.message));
     });
@@ -120,10 +121,11 @@ export class WorkerVideoOutput implements VideoOutput {
   }
 
   setProject(project: Project, files: MediaFiles): void {
-    // The worker opens its own copy of each file that has pictures.
+    // The worker opens its own copy of each file it draws with: pictures and fonts.
     const add: { assetId: Id; file: File }[] = [];
     for (const [assetId, media] of files) {
-      if (this.sent.has(assetId) || (!media.video && !media.image)) continue;
+      const draws = media.video || media.image || media.info.kind === "font";
+      if (this.sent.has(assetId) || !draws) continue;
       add.push({ assetId, file: media.file });
       this.sent.add(assetId);
     }

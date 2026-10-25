@@ -9,6 +9,7 @@ import {
 } from "mediabunny";
 import type { Asset, Id } from "../project/model";
 import { FPS_30, type FrameRate, frameRateFromNumber, secondsToMicros } from "../time";
+import { isFontFile, registerFontFile } from "../render/fonts";
 import { ImageSource } from "./image-source";
 
 export class UnsupportedMediaError extends Error {
@@ -56,6 +57,7 @@ export class MediaFile {
   ) {}
 
   static async open(file: File): Promise<MediaFile> {
+    if (isFontFile(file)) return MediaFile.openFont(file);
     if (file.type.startsWith("image/")) return MediaFile.openImage(file);
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
     try {
@@ -69,6 +71,18 @@ export class MediaFile {
   dispose(): void {
     this.input?.dispose();
     this.image?.dispose();
+  }
+
+  /** Fonts are registered with the current thread, so text clips can draw with them by family. */
+  private static async openFont(file: File): Promise<MediaFile> {
+    let family: string;
+    try {
+      family = await registerFontFile(file);
+    } catch {
+      throw new UnsupportedMediaError(`${file.name} isn't a font this browser can read.`);
+    }
+    const info: MediaInfo = { kind: "font", name: file.name, start: 0, duration: 0, font: { family } };
+    return new MediaFile(file, null, info, null, null, []);
   }
 
   private static async openImage(file: File): Promise<MediaFile> {

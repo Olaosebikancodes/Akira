@@ -12,7 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { seekToEdit, stepFrames } from "./actions";
 import { CanvasOverlay } from "./canvas-overlay";
-import { notify, togglePlayback, useEditor } from "./store";
+import { fontBaseUrl, notify, togglePlayback, useEditor } from "./store";
 import { IconButton } from "./ui";
 
 /** The canvas the project plays in, its on-canvas handles and the transport bar. */
@@ -42,7 +42,7 @@ export function Preview() {
         onPlayingChange: (playing) => useEditor.setState({ playing }),
         onError: (error) => notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }),
       },
-      { renderWorker },
+      { renderWorker, fontBaseUrl: fontBaseUrl() },
     );
     useEditor.setState({ player });
     return () => {

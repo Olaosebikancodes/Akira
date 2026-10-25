@@ -5,6 +5,7 @@ import { audibleClips } from "../audio/schedule";
 import { ExportCancelledError, type ExportOptions, exportProject } from "../export/export";
 import { MediaFile, type MediaFiles } from "../media/media-file";
 import type { Id, Project } from "../project/model";
+import { setFontBaseUrl } from "../render/fonts";
 import { projectDuration } from "../project/query";
 import type { WorkerScope } from "./render-worker";
 
@@ -15,6 +16,8 @@ export type ExportRequest =
       files: { assetId: Id; file: File }[];
       audio: PcmAudio | null;
       quality?: QualityLevel;
+      /** Absolute URL the built-in fonts are served from, ending in "/". */
+      fontBaseUrl: string;
     }
   | { type: "cancel" };
 
@@ -36,6 +39,7 @@ export function serveExportWorker(scope: WorkerScope): void {
     }
     controller = new AbortController();
     const { signal } = controller;
+    setFontBaseUrl(message.fontBaseUrl);
     void (async () => {
       const files = new Map<Id, MediaFile>();
       try {
@@ -69,7 +73,7 @@ export async function exportInWorker(
   worker: Worker,
   project: Project,
   files: MediaFiles,
-  options: Omit<ExportOptions, "audio"> = {},
+  options: Omit<ExportOptions, "audio"> & { fontBaseUrl: string },
 ): Promise<Blob> {
   const audio =
     audibleClips(project, files).length > 0
@@ -97,14 +101,25 @@ export async function exportInWorker(
       else reject(message.cancelled ? new ExportCancelledError() : new Error(message.message));
     };
     worker.addEventListener("message", onMessage);
-    const request: ExportRequest = { type: "start", project, files: sources, audio, quality: options.quality };
+    const request: ExportRequest = {
+      type: "start",
+      project,
+      files: sources,
+      audio,
+      quality: options.quality,
+      fontBaseUrl: options.fontBaseUrl,
+    };
     worker.postMessage(request, audio ? pcmTransferables(audio) : []);
   });
 }
 
-/** Assets the export actually reads: every clip's media and an image background. */
+/**
+ * Assets the export actually reads: every clip's media, an image background,
+ * and imported fonts (text refers to them by family, not by asset).
+ */
 function usedAssets(project: Project): Set<Id> {
   const used = new Set(project.tracks.flatMap((track) => track.clips.map((clip) => clip.assetId)));
   if (project.canvas.background.kind === "image") used.add(project.canvas.background.assetId);
+  for (const asset of Object.values(project.assets)) if (asset.kind === "font") used.add(asset.id);
   return used;
 }

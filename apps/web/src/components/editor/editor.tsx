@@ -1,6 +1,6 @@
 "use client";
 
-import { frameRateToNumber } from "@akira/engine";
+import { frameRateToNumber, setFontBaseUrl } from "@akira/engine";
 import { WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect } from "react";
 import {
@@ -19,12 +19,14 @@ import {
 import { Inspector } from "./inspector";
 import { MediaPanel } from "./media-panel";
 import { Preview } from "./preview";
-import { dismissNotice, redo, seek, select, selectAll, setSnapping, setZoom, togglePlayback, undo, useEditor } from "./store";
+import { dismissNotice, fontBaseUrl, redo, seek, select, selectAll, setSnapping, setZoom, togglePlayback, undo, useEditor } from "./store";
 import { Timeline } from "./timeline/timeline";
 import { TopBar } from "./top-bar";
 import { focusRing } from "./ui";
 
 export function Editor() {
+  // The page measures text for the on-canvas handles, so it needs the fonts too.
+  useEffect(() => setFontBaseUrl(fontBaseUrl()), []);
   useKeyboardShortcuts();
   useUnsavedWarning();
 

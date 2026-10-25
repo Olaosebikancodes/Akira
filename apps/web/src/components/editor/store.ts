@@ -27,6 +27,11 @@ const FILMSTRIP_HEIGHT = 96;
 
 export type Edit = (project: Project) => Project;
 
+/** Where the bundled fonts are served from, as the absolute URL workers need. */
+export function fontBaseUrl(): string {
+  return `${location.origin}/fonts/`;
+}
+
 /** A voiceover being recorded over playback. */
 export interface VoiceoverSession {
   /** Where the playhead was when recording started. */

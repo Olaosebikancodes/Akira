@@ -2,12 +2,18 @@ import { MediaFile } from "../media/media-file";
 import type { Id, Project } from "../project/model";
 import { projectDuration } from "../project/query";
 import { Compositor } from "../render/compositor";
+import { setFontBaseUrl } from "../render/fonts";
 import { FrameRenderer } from "../render/frame-renderer";
 import type { Micros } from "../time";
 
 /** Messages the main thread sends the render worker. */
 export type RenderRequest =
-  | { type: "init"; canvas: OffscreenCanvas }
+  | {
+      type: "init";
+      canvas: OffscreenCanvas;
+      /** Absolute URL the built-in fonts are served from, ending in "/". */
+      fontBaseUrl: string;
+    }
   | { type: "files"; add: { assetId: Id; file: File }[]; remove: Id[] }
   | { type: "project"; project: Project }
   | {
@@ -101,6 +107,7 @@ export function serveRenderWorker(scope: WorkerScope): void {
     const message = event.data;
     switch (message.type) {
       case "init":
+        setFontBaseUrl(message.fontBaseUrl);
         compositor = new Compositor(message.canvas);
         renderer = new FrameRenderer(compositor);
         break;

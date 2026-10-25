@@ -1,14 +1,19 @@
 import { frameToMicros, type Micros } from "../time";
-import { createId, createTrack } from "./create";
+import type { Cue } from "./captions";
+import { createId, createTextClip, createTrack } from "./create";
 import {
   type Asset,
   type AudioFilters,
+  CAPTION_POSITION,
+  CAPTION_STYLE,
   type Clip,
+  type ClipAnimation,
   type Crop,
   IDENTITY_TRANSFORM,
   type Id,
   type Project,
   type Track,
+  type TextStyle,
   type TrackKind,
   type Transform,
 } from "./model";
@@ -45,13 +50,13 @@ export function minClipDuration(project: Project): Micros {
 
 /**
  * Restores the invariants after an edit: the main track is packed from
- * zero in its current order, other tracks are sorted by start, fades fit
- * inside their clips, and empty tracks other than the main track are
- * removed.
+ * zero in its current order, other tracks are sorted by start, fades and
+ * animations fit inside their clips, and empty tracks other than the main
+ * track are removed.
  */
 export function normalize(project: Project): Project {
   const tracks = project.tracks
-    .map((track, index) => fitFades(index === 0 ? packTrack(track) : sortTrack(track)))
+    .map((track, index) => fitTimings(index === 0 ? packTrack(track) : sortTrack(track)))
     .filter((track, index) => index === 0 || track.clips.length > 0);
   return { ...project, tracks };
 }
@@ -192,12 +197,13 @@ export function replaceClipAsset(project: Project, clipId: Id, asset: Asset): Pr
 
   const length = clipDuration(clip);
   let next: Clip;
+  if (asset.kind === "font" || asset.kind === "text") return project;
   if (asset.kind === "image") {
-    next = { ...clip, assetId: asset.id, speed: 1, sourceIn: 0, sourceOut: length, freezeAt: undefined };
+    next = { ...clip, assetId: asset.id, speed: 1, sourceIn: 0, sourceOut: length, freezeAt: undefined, text: undefined };
   } else {
     const speed = isStill(project, clip) ? 1 : clip.speed;
     const sourceOut = Math.min(asset.start + Math.round(length * speed), asset.start + asset.duration);
-    next = { ...clip, assetId: asset.id, speed, sourceIn: asset.start, sourceOut, freezeAt: undefined };
+    next = { ...clip, assetId: asset.id, speed, sourceIn: asset.start, sourceOut, freezeAt: undefined, text: undefined };
   }
   if (trackIndex !== 0) {
     // A longer clip mustn't run into the next one on its track.
@@ -403,6 +409,48 @@ export function setAudioFilters(project: Project, clipId: Id, filters: Partial<A
   return replaceClip(project, trackIndex, { ...clip, audioFilters });
 }
 
+/** Changes what a text clip says or how it looks. Style changes merge into the current style. */
+export function updateText(project: Project, clipId: Id, change: { content?: string; style?: Partial<TextStyle> }): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || !found.clip.text) return project;
+  const { clip, trackIndex } = found;
+  const text = {
+    content: change.content ?? clip.text!.content,
+    style: { ...clip.text!.style, ...change.style },
+  };
+  text.style.size = clamp(text.style.size, 0.01, 0.5);
+  return replaceClip(project, trackIndex, { ...clip, text });
+}
+
+/** Sets a clip's in, out or loop animation; pass null to remove one. */
+export function setClipAnimation(project: Project, clipId: Id, change: Partial<ClipAnimation>): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const { clip, trackIndex } = found;
+  const animation = { in: null, out: null, loop: null, ...clip.animation, ...change };
+  return normalize(replaceClip(project, trackIndex, { ...clip, animation }));
+}
+
+export interface CaptionsResult {
+  project: Project;
+  clipIds: Id[];
+}
+
+/** Adds one caption clip per cue on a new track above the others, in the caption style. */
+export function addCaptions(project: Project, cues: readonly Cue[], style: TextStyle = CAPTION_STYLE): CaptionsResult {
+  if (cues.length === 0) return { project, clipIds: [] };
+  let next: Project = { ...project, tracks: [...project.tracks, createTrack("video")] };
+  const trackIndex = next.tracks.length - 1;
+  const clipIds: Id[] = [];
+  for (const cue of cues) {
+    const clip = createTextClip(cue.start, { content: cue.text, style }, cue.end - cue.start, CAPTION_POSITION);
+    clipIds.push(clip.id);
+    // Overlapping cues go onto a track of their own rather than colliding.
+    next = placeOnTrack(next, trackIndex, clip);
+  }
+  return { project: normalize(next), clipIds };
+}
+
 export type TrackFlag = "muted" | "solo" | "hidden" | "locked";
 
 export function setTrackFlag(project: Project, trackId: Id, flag: TrackFlag, value: boolean): Project {
@@ -449,15 +497,31 @@ function packTrack(track: Track): Track {
   return changed ? { ...track, clips } : track;
 }
 
-/** Shortens fades that no longer fit their clip, e.g. after a trim or speed change. */
-function fitFades(track: Track): Track {
+/** Shortens fades and in/out animations that no longer fit their clip, e.g. after a trim. */
+function fitTimings(track: Track): Track {
   let changed = false;
   const clips = track.clips.map((clip) => {
     const length = clipDuration(clip);
-    if (clip.fadeIn + clip.fadeOut <= length) return clip;
-    changed = true;
-    const scale = length / (clip.fadeIn + clip.fadeOut);
-    return { ...clip, fadeIn: Math.floor(clip.fadeIn * scale), fadeOut: Math.floor(clip.fadeOut * scale) };
+    let next = clip;
+    if (clip.fadeIn + clip.fadeOut > length) {
+      const scale = length / (clip.fadeIn + clip.fadeOut);
+      next = { ...next, fadeIn: Math.floor(clip.fadeIn * scale), fadeOut: Math.floor(clip.fadeOut * scale) };
+    }
+    const animation = clip.animation;
+    const animated = (animation?.in?.duration ?? 0) + (animation?.out?.duration ?? 0);
+    if (animation && animated > length) {
+      const scale = length / animated;
+      next = {
+        ...next,
+        animation: {
+          ...animation,
+          in: animation.in && { ...animation.in, duration: Math.floor(animation.in.duration * scale) },
+          out: animation.out && { ...animation.out, duration: Math.floor(animation.out.duration * scale) },
+        },
+      };
+    }
+    if (next !== clip) changed = true;
+    return next;
   });
   return changed ? { ...track, clips } : track;
 }

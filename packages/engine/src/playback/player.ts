@@ -25,6 +25,8 @@ export interface PlayerOptions {
    * hand canvases to workers, video renders there instead of on the main thread.
    */
   renderWorker?: Worker;
+  /** Absolute URL the built-in fonts are served from, ending in "/". Needed with a render worker. */
+  fontBaseUrl?: string;
 }
 
 /**
@@ -59,7 +61,7 @@ export class Player {
     const onError = (error: unknown) => this.events.onError?.(error);
     this.video =
       options.renderWorker && "transferControlToOffscreen" in canvas
-        ? new WorkerVideoOutput(options.renderWorker, canvas, project, files, onError)
+        ? new WorkerVideoOutput(options.renderWorker, canvas, project, files, options.fontBaseUrl ?? "/fonts/", onError)
         : new LocalVideoOutput(canvas, project, files, onError);
     this.video.show(0);
   }

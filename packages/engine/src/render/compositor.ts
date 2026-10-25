@@ -4,7 +4,7 @@ import type { Rotation } from "./orientation";
 
 /** A decoded picture and the orientation stored with it. */
 export interface Picture {
-  source: VideoFrame | ImageBitmap;
+  source: VideoFrame | ImageBitmap | OffscreenCanvas;
   /** Size as displayed, after `rotation`. */
   displayWidth: number;
   displayHeight: number;
@@ -105,7 +105,7 @@ interface Target {
 
 interface CachedTexture {
   texture: WebGLTexture;
-  source: VideoFrame | ImageBitmap;
+  source: Picture["source"];
 }
 
 /**
@@ -326,7 +326,7 @@ function fullTargetModel(width: number, height: number): Mat3 {
   return new Float32Array([width, 0, 0, 0, height, 0, 0, 0, 1]);
 }
 
-function upload(gl: WebGL2RenderingContext, source: VideoFrame | ImageBitmap): void {
+function upload(gl: WebGL2RenderingContext, source: Picture["source"]): void {
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
   // Mipmaps keep 4K footage from shimmering when it's drawn much smaller.

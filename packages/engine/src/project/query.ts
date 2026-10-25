@@ -1,5 +1,5 @@
 import type { Micros } from "../time";
-import type { Asset, Clip, Id, Project, Track } from "./model";
+import { type Asset, type Clip, type Id, type Project, TEXT_ASSET, TEXT_ASSET_ID, type Track } from "./model";
 import { clipContains, clipEnd } from "./timing";
 
 /** Where the last clip on any track ends. */
@@ -39,17 +39,19 @@ export function findClip(project: Project, clipId: Id): Clip | undefined {
 }
 
 export function assetOf(project: Project, clip: Clip): Asset {
+  if (clip.assetId === TEXT_ASSET_ID) return TEXT_ASSET;
   const asset = project.assets[clip.assetId];
   if (!asset) throw new Error(`Clip ${clip.id} refers to a missing asset.`);
   return asset;
 }
 
 /**
- * Stills and freeze frames show one picture, so they have no source limits:
- * they can be trimmed to any length but can't change speed.
+ * Stills, text and freeze frames show one picture, so they have no source
+ * limits: they can be trimmed to any length but can't change speed.
  */
 export function isStill(project: Project, clip: Clip): boolean {
-  return clip.freezeAt !== undefined || assetOf(project, clip).kind === "image";
+  const kind = assetOf(project, clip).kind;
+  return clip.freezeAt !== undefined || kind === "image" || kind === "text";
 }
 
 /** Whether the clip makes sound: a video or audio clip that isn't silenced or frozen. */

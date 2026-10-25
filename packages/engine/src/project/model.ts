@@ -38,7 +38,8 @@ export interface Marker {
   time: Micros;
 }
 
-export type AssetKind = "video" | "audio" | "image";
+/** Text clips have no file; they all refer to the built-in text asset. */
+export type AssetKind = "video" | "audio" | "image" | "font" | "text";
 
 /** An imported media file and what we learned about it when probing. */
 export interface Asset {
@@ -67,7 +68,16 @@ export interface Asset {
     height: number;
     animated: boolean;
   };
+  /** Set on imported font files: the family name text clips use to pick it. */
+  font?: {
+    family: string;
+  };
 }
+
+export const TEXT_ASSET_ID = "text";
+
+/** The asset every text clip refers to. It isn't stored in projects or shown with media. */
+export const TEXT_ASSET: Asset = { id: TEXT_ASSET_ID, kind: "text", name: "Text", start: 0, duration: 0 };
 
 export type TrackKind = "video" | "audio";
 
@@ -108,7 +118,72 @@ export interface Clip {
   crop: Crop;
   /** Set on freeze frames: the source time shown for the clip's whole length. */
   freezeAt?: Micros;
+  /** Set on text clips: what they say and how it looks. */
+  text?: ClipText;
+  /** How the clip enters, leaves and moves while on screen. */
+  animation?: ClipAnimation;
 }
+
+export interface ClipText {
+  content: string;
+  style: TextStyle;
+}
+
+/** Sizes are fractions of the font size, which is itself a fraction of the canvas's short edge. */
+export interface TextStyle {
+  /** A built-in font or an imported font's family. */
+  font: string;
+  /** Font size as a fraction of the canvas's short edge, so text looks the same at any aspect ratio. */
+  size: number;
+  bold: boolean;
+  italic: boolean;
+  color: string;
+  align: "left" | "center" | "right";
+  letterSpacing: number;
+  /** Distance between lines as a multiple of the font size. */
+  lineHeight: number;
+  stroke: { color: string; width: number } | null;
+  shadow: { color: string; blur: number; offsetX: number; offsetY: number } | null;
+  background: { color: string; opacity: number; padding: number; radius: number } | null;
+}
+
+export type InAnimation = "fade" | "pop" | "slide-up" | "slide-left" | "typewriter";
+export type OutAnimation = "fade" | "pop" | "slide-down";
+export type LoopAnimation = "pulse" | "bounce";
+
+export interface ClipAnimation {
+  in: { kind: InAnimation; duration: Micros } | null;
+  out: { kind: OutAnimation; duration: Micros } | null;
+  /** `period` is one full cycle of the movement. */
+  loop: { kind: LoopAnimation; period: Micros } | null;
+}
+
+export const NO_ANIMATION: ClipAnimation = { in: null, out: null, loop: null };
+
+export const DEFAULT_TEXT_STYLE: TextStyle = {
+  font: "Inter",
+  size: 0.08,
+  bold: true,
+  italic: false,
+  color: "#ffffff",
+  align: "center",
+  letterSpacing: 0,
+  lineHeight: 1.15,
+  stroke: null,
+  shadow: { color: "#000000", blur: 0.12, offsetX: 0, offsetY: 0.04 },
+  background: null,
+};
+
+/** Captions sit low on the frame in a soft dark box, readable over any footage. */
+export const CAPTION_STYLE: TextStyle = {
+  ...DEFAULT_TEXT_STYLE,
+  size: 0.045,
+  shadow: null,
+  background: { color: "#000000", opacity: 0.6, padding: 0.3, radius: 0.18 },
+};
+
+/** Where captions sit: centred, a little above the bottom edge. */
+export const CAPTION_POSITION = { x: 0, y: 0.36 };
 
 /**
  * Where a visual clip sits on the canvas. Positions are relative to the

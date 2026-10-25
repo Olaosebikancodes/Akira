@@ -16,6 +16,11 @@ export interface LayerInput {
   crop: Crop;
   canvasWidth: number;
   canvasHeight: number;
+  /**
+   * "contain" (the default) scales the picture so it fits the canvas at scale
+   * 1; "natural" keeps its own size in canvas pixels, which is how text works.
+   */
+  fit?: "contain" | "natural";
 }
 
 export interface LayerGeometry {
@@ -35,7 +40,7 @@ export interface LayerGeometry {
  */
 export function layerGeometry(input: LayerInput): LayerGeometry {
   const { displayWidth, displayHeight, canvasWidth, canvasHeight, transform, crop } = input;
-  const fit = Math.min(canvasWidth / displayWidth, canvasHeight / displayHeight);
+  const fit = input.fit === "natural" ? 1 : Math.min(canvasWidth / displayWidth, canvasHeight / displayHeight);
   const width = displayWidth * fit * transform.scale * (transform.flipX ? -1 : 1);
   const height = displayHeight * fit * transform.scale * (transform.flipY ? -1 : 1);
   const centreX = canvasWidth / 2 + transform.x * canvasWidth;

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createTextClip } from "./create";
 import {
+  addCaptions,
   addMarker,
   deleteClips,
   detachAudio,
@@ -14,14 +16,17 @@ import {
   replaceClipAsset,
   rotateClip90,
   setAudioFilters,
+  setClipAnimation,
   setClipFades,
   setClipSpeed,
   setTrackFlag,
   splitClip,
   trimClip,
   updateClipLook,
+  updateText,
 } from "./edit";
 import { AUDIO, clip, IMAGE, layout, projectWith, VIDEO } from "./fixtures.test-util";
+import { CAPTION_STYLE, DEFAULT_TEXT_STYLE } from "./model";
 import { findClip } from "./query";
 import { clipDuration } from "./timing";
 
@@ -400,5 +405,74 @@ describe("audio filters and solo", () => {
   it("solos a track", () => {
     const project = projectWith({ clips: [] }, { kind: "audio", clips: [] });
     expect(setTrackFlag(project, "track1", "solo", true).tracks[1]?.solo).toBe(true);
+  });
+});
+
+describe("text", () => {
+  const titled = () => {
+    const title = { ...createTextClip(0, { content: "Hello", style: DEFAULT_TEXT_STYLE }), id: "t" };
+    return projectWith({ clips: [clip("a", VIDEO, 0, 4 * S)] }, { clips: [title] });
+  };
+
+  it("changes the words and merges style changes", () => {
+    const edited = updateText(titled(), "t", { content: "Hi\nthere", style: { color: "#ff0000", size: 2 } });
+    expect(findClip(edited, "t")?.text).toEqual({
+      content: "Hi\nthere",
+      style: { ...DEFAULT_TEXT_STYLE, color: "#ff0000", size: 0.5 },
+    });
+  });
+
+  it("leaves clips that aren't text alone", () => {
+    const project = titled();
+    expect(updateText(project, "a", { content: "Nope" })).toBe(project);
+  });
+
+  it("drops the text when a text clip is replaced with media", () => {
+    expect(findClip(replaceClipAsset(titled(), "t", IMAGE), "t")?.text).toBeUndefined();
+  });
+
+  it("splits text into two clips saying the same thing", () => {
+    const { project, rightId } = splitClip(titled(), "t", S);
+    expect(findClip(project, rightId!)?.text?.content).toBe("Hello");
+  });
+});
+
+describe("animations", () => {
+  it("sets in, out and loop animations independently", () => {
+    let project = projectWith({ clips: [clip("a", VIDEO, 0, 4 * S)] });
+    project = setClipAnimation(project, "a", { in: { kind: "fade", duration: S } });
+    project = setClipAnimation(project, "a", { loop: { kind: "pulse", period: S } });
+    expect(findClip(project, "a")?.animation).toEqual({
+      in: { kind: "fade", duration: S },
+      out: null,
+      loop: { kind: "pulse", period: S },
+    });
+  });
+
+  it("shrinks in and out animations to fit a shorter clip", () => {
+    let project = projectWith({ clips: [clip("a", VIDEO, 0, 4 * S)] });
+    project = setClipAnimation(project, "a", { in: { kind: "fade", duration: 2 * S }, out: { kind: "fade", duration: 2 * S } });
+    project = trimClip(project, "a", "end", 2 * S);
+    expect(findClip(project, "a")?.animation).toMatchObject({ in: { duration: S }, out: { duration: S } });
+  });
+});
+
+describe("addCaptions", () => {
+  it("puts one caption clip per cue on a new track, overlaps on another", () => {
+    const project = projectWith({ clips: [clip("a", VIDEO, 0, 4 * S)] });
+    const { project: captioned, clipIds } = addCaptions(project, [
+      { start: S, end: 2 * S, text: "One" },
+      { start: 3 * S, end: 4 * S, text: "Two" },
+      { start: 3.5 * S, end: 5 * S, text: "Overlap" },
+    ]);
+    expect(clipIds).toHaveLength(3);
+    expect(captioned.tracks).toHaveLength(3);
+    expect(layout(captioned, 1)).toEqual([
+      [clipIds[0], S, 2 * S],
+      [clipIds[1], 3 * S, 4 * S],
+    ]);
+    const first = findClip(captioned, clipIds[0]!)!;
+    expect(first.text).toEqual({ content: "One", style: CAPTION_STYLE });
+    expect(first.transform.y).toBeGreaterThan(0.3);
   });
 });

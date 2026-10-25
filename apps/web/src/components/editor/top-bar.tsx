@@ -3,7 +3,7 @@
 import { ExportCancelledError, exportInWorker, projectDuration } from "@akira/engine";
 import { DownloadSimpleIcon, ExportIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
-import { notify, setProjectName, useEditor } from "./store";
+import { fontBaseUrl, notify, setProjectName, useEditor } from "./store";
 import { Button, focusRing } from "./ui";
 
 type ExportState =
@@ -27,6 +27,7 @@ export function TopBar() {
       const blob = await exportInWorker(worker, project, files, {
         signal: controller.signal,
         onProgress: (progress) => setExporting({ kind: "running", progress, controller }),
+        fontBaseUrl: fontBaseUrl(),
       });
       setExporting({ kind: "done", url: URL.createObjectURL(blob), name: `${project.name || "Akira"}.mp4`, size: blob.size });
     } catch (error) {
