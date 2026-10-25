@@ -6,6 +6,7 @@ export {
   MediaFile,
   UnsupportedMediaError,
 } from "./media/media-file";
+export { createThumbnails, type Thumbnail } from "./media/thumbnails";
 export { Player, type PlayerEvents } from "./playback/player";
 export * from "./project/canvas";
 export * from "./project/create";
@@ -14,4 +15,5 @@ export * from "./project/model";
 export * from "./project/query";
 export * from "./project/snap";
 export * from "./project/timing";
+export { coverScale, type LayerGeometry, layerGeometry, type Point, pointInQuad } from "./render/geometry";
 export * from "./time";
