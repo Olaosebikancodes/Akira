@@ -11,6 +11,7 @@ export {
 } from "./media/media-file";
 export { createThumbnails, type Thumbnail } from "./media/thumbnails";
 export { Player, type PlayerEvents, type PlayerOptions } from "./playback/player";
+export { wallClock } from "./playback/video-output";
 export * from "./project/canvas";
 export * from "./project/create";
 export * from "./project/edit";

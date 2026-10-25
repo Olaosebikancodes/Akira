@@ -87,12 +87,23 @@ export class Player {
     this.seek(Math.min(this.time, this.duration));
   }
 
+  /**
+   * Creates and resumes the audio context. Browsers only allow this shortly
+   * after a click, so call it at the start of a click handler that awaits
+   * something else (such as a microphone prompt) before playing.
+   */
+  prepareAudio(): AudioContext {
+    const context = (this.audioContext ??= new AudioContext({ latencyHint: "interactive" }));
+    void context.resume();
+    return context;
+  }
+
   async play(): Promise<void> {
     if (this.playing || this.duration === 0) return;
     if (this.time >= this.duration) this.time = 0;
 
-    const context = (this.audioContext ??= new AudioContext({ latencyHint: "interactive" }));
     // Browsers only let audio start from a user gesture, so resume before any other await.
+    const context = this.prepareAudio();
     await context.resume();
     await loadAudioWorklets(context);
     if (!this.master) {
@@ -125,6 +136,17 @@ export class Player {
       this.video.show(this.time);
     }
     this.events.onTimeUpdate?.(this.time);
+  }
+
+  /**
+   * The wall-clock time (as `performance.timeOrigin + performance.now()`) at
+   * which timeline time `time` is or was heard, during playback. Lets a
+   * recording started alongside playback be placed exactly. Null when paused.
+   */
+  heardAt(time: Micros): number | null {
+    if (!this.playing || !this.audioContext) return null;
+    const contextTime = this.timelineOrigin + microsToSeconds(time);
+    return wallClock() + (contextTime - outputTime(this.audioContext)) * 1000;
   }
 
   /** Silences playback without stopping it, e.g. so a voiceover doesn't record the project. */
