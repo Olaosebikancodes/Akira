@@ -4,7 +4,7 @@ import { projectDuration } from "../project/create";
 import type { Project } from "../project/model";
 import { Compositor } from "../render/compositor";
 import { FrameRenderer } from "../render/frame-renderer";
-import { type Micros, microsToSeconds, secondsToMicros } from "../time";
+import { type FrameRate, type Micros, microsToSeconds, secondsToMicros } from "../time";
 
 /** How far ahead of the playhead audio is decoded and scheduled. */
 const AUDIO_LOOKAHEAD: Micros = 1_000_000;
@@ -63,6 +63,10 @@ export class Player {
 
   get isPlaying(): boolean {
     return this.playing;
+  }
+
+  get frameRate(): FrameRate {
+    return this.project.canvas.frameRate;
   }
 
   setProject(project: Project, files: MediaFiles): void {
