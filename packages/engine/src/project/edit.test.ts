@@ -28,7 +28,7 @@ import {
 } from "./edit";
 import { AUDIO, clip, IMAGE, layout, projectWith, VIDEO } from "./fixtures.test-util";
 import { CAPTION_STYLE, DEFAULT_TEXT_STYLE } from "./model";
-import { findClip } from "./query";
+import { findClip, transitionAt } from "./query";
 import { clipDuration } from "./timing";
 
 const S = 1_000_000;
@@ -534,5 +534,28 @@ describe("transitions", () => {
     const { project, rightId } = splitClip(joined, "a", S);
     expect(findClip(project, "a")?.transition).toBeUndefined();
     expect(findClip(project, rightId!)?.transition).toEqual({ kind: "Fade", duration: S / 2 });
+  });
+});
+
+describe("transitionAt", () => {
+  const joined = () =>
+    setTransition(projectWith({ clips: [clip("a", VIDEO, 0, 2 * S), clip("b", VIDEO, 2 * S, 2 * S)] }), "a", {
+      kind: "Fade",
+      duration: S,
+    });
+
+  it("is centred on the cut", () => {
+    const track = joined().tracks[0]!;
+    expect(transitionAt(track, 1.4 * S)).toBeUndefined();
+    expect(transitionAt(track, 1.5 * S)).toMatchObject({ kind: "Fade", progress: 0 });
+    expect(transitionAt(track, 2 * S)?.progress).toBeCloseTo(0.5);
+    expect(transitionAt(track, 2.4 * S)?.progress).toBeCloseTo(0.9);
+    expect(transitionAt(track, 2.5 * S)).toBeUndefined();
+  });
+
+  it("names both clips", () => {
+    const found = transitionAt(joined().tracks[0]!, 2 * S);
+    expect(found?.from.id).toBe("a");
+    expect(found?.to.id).toBe("b");
   });
 });

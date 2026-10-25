@@ -4,6 +4,7 @@ export { audioBufferToPcm, type PcmAudio } from "./audio/pcm";
 export { computeWaveform, peakBetween, WAVEFORM_RATE, type Waveform } from "./audio/waveform";
 export { type ExportOptions, ExportCancelledError, exportProject } from "./export/export";
 export {
+  isLutFile,
   type MediaFiles,
   type MediaInfo,
   MediaFile,
@@ -21,9 +22,13 @@ export * from "./project/query";
 export * from "./project/snap";
 export * from "./project/timing";
 export { animatedLook } from "./render/animation";
+export { analyzeColor, type ColorCorrection } from "./render/auto-color";
+export { type BackgroundFill, Compositor, type Layer, type Picture, type RenderItem, type TransitionLayer } from "./render/compositor";
 export { BUILT_IN_FONTS, ensureFont, fontShorthand, isFontFile, setFontBaseUrl } from "./render/fonts";
 export { coverScale, type LayerGeometry, layerGeometry, type Point, pointInQuad } from "./render/geometry";
+export { gradeColor } from "./render/grade";
 export { measureText } from "./render/text";
+export { findTransition, loadTransitions, type TransitionDefinition } from "./render/transitions";
 export * from "./time";
 export { exportInWorker, serveExportWorker } from "./worker/export-worker";
 export { serveRenderWorker, type WorkerScope } from "./worker/render-worker";

@@ -129,11 +129,14 @@ test("plays in real time, pauses and stops at the end", async ({ page }) => {
   await page.keyboard.press("Home");
   await page.getByRole("button", { name: "Play" }).click();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-  await expect.poll(() => colourAt(page), { timeout: 10_000 }).toBe("green");
+  // Pause once the playhead reaches the green second. Watching the clock rather
+  // than screenshots means a slow screenshot can't miss the window.
+  await expect(currentTime(page)).toHaveText(/^00:00:01:/, { timeout: 10_000 });
   await page.keyboard.press(" ");
-  const paused = await currentTime(page).textContent();
+  const paused = (await currentTime(page).textContent())!;
   await page.waitForTimeout(400);
-  await expect(currentTime(page)).toHaveText(paused!);
+  await expect(currentTime(page)).toHaveText(paused);
+  await expect.poll(() => colourAt(page)).toBe(paused.startsWith("00:00:01:") ? "green" : "blue");
 
   await page.keyboard.press(" ");
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();

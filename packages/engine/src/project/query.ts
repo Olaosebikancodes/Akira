@@ -19,6 +19,39 @@ export function clipAt(track: Track, time: Micros): Clip | undefined {
   return track.clips.find((clip) => clipContains(clip, time));
 }
 
+/** The clip that starts exactly where this one ends on the same track, if any. */
+export function followingClip(track: Track, clip: Clip): Clip | undefined {
+  const end = clipEnd(clip);
+  return track.clips.find((other) => other.id !== clip.id && other.start === end);
+}
+
+export interface ActiveTransition {
+  from: Clip;
+  to: Clip;
+  /** Which transition, by catalogue name. */
+  kind: string;
+  /** 0 to 1 across the transition. */
+  progress: number;
+}
+
+/**
+ * The transition playing on a track at `time`, if any. Transitions are
+ * centred on the cut, so the outgoing clip holds its last frame for the
+ * second half and the incoming clip holds its first frame for the first.
+ */
+export function transitionAt(track: Track, time: Micros): ActiveTransition | undefined {
+  for (const from of track.clips) {
+    if (!from.transition) continue;
+    const cut = clipEnd(from);
+    const { duration, kind } = from.transition;
+    const begin = cut - duration / 2;
+    if (time < begin || time >= begin + duration) continue;
+    const to = followingClip(track, from);
+    if (to) return { from, to, kind, progress: (time - begin) / duration };
+  }
+  return undefined;
+}
+
 export interface ClipLocation {
   clip: Clip;
   track: Track;

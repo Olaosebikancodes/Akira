@@ -26,7 +26,7 @@ import {
   type TrackKind,
   type Transform,
 } from "./model";
-import { assetOf, isStill, locateClip } from "./query";
+import { assetOf, followingClip, isStill, locateClip } from "./query";
 import { clipDuration, clipEnd, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
 
 /*
@@ -394,12 +394,6 @@ export function setTransition(project: Project, clipId: Id, transition: ClipTran
   if (!next) return project;
   const duration = clamp(transition.duration, MIN_TRANSITION, Math.min(clipDuration(clip), clipDuration(next)));
   return replaceClip(project, trackIndex, { ...clip, transition: { ...transition, duration } });
-}
-
-/** The clip that starts exactly where this one ends on the same track, if any. */
-export function followingClip(track: Track, clip: Clip): Clip | undefined {
-  const end = clipEnd(clip);
-  return track.clips.find((other) => other.id !== clip.id && other.start === end);
 }
 
 /** Turns a clip a quarter turn clockwise, keeping the angle in (-180, 180]. */

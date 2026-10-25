@@ -114,11 +114,12 @@ export async function exportInWorker(
 }
 
 /**
- * Assets the export actually reads: every clip's media, an image background,
- * and imported fonts (text refers to them by family, not by asset).
+ * Assets the export actually reads: every clip's media and LUT, an image
+ * background, and imported fonts (text refers to them by family, not by asset).
  */
 function usedAssets(project: Project): Set<Id> {
-  const used = new Set(project.tracks.flatMap((track) => track.clips.map((clip) => clip.assetId)));
+  const clips = project.tracks.flatMap((track) => track.clips);
+  const used = new Set(clips.flatMap((clip) => (clip.lut ? [clip.assetId, clip.lut.assetId] : [clip.assetId])));
   if (project.canvas.background.kind === "image") used.add(project.canvas.background.assetId);
   for (const asset of Object.values(project.assets)) if (asset.kind === "font") used.add(asset.id);
   return used;

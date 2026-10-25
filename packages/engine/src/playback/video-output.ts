@@ -121,10 +121,10 @@ export class WorkerVideoOutput implements VideoOutput {
   }
 
   setProject(project: Project, files: MediaFiles): void {
-    // The worker opens its own copy of each file it draws with: pictures and fonts.
+    // The worker opens its own copy of each file it draws with: pictures, fonts and LUTs.
     const add: { assetId: Id; file: File }[] = [];
     for (const [assetId, media] of files) {
-      const draws = media.video || media.image || media.info.kind === "font";
+      const draws = media.video || media.image || media.lut || media.info.kind === "font";
       if (this.sent.has(assetId) || !draws) continue;
       add.push({ assetId, file: media.file });
       this.sent.add(assetId);

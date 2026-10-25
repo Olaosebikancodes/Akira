@@ -52,3 +52,28 @@ describe("animatedLook", () => {
     expect(animatedLook(clip, S / 2).transform.scale).toBeCloseTo(1);
   });
 });
+
+describe("shake", () => {
+  const shaking = (amount: number): Clip => ({ ...createClip(IMAGE, 0), sourceOut: 4 * S, effects: [{ kind: "shake", amount }] });
+
+  it("moves the clip around and zooms in to hide the edges", () => {
+    const clip = shaking(1);
+    const positions = [0.1, 0.2, 0.3, 0.4].map((t) => animatedLook(clip, t * S).transform);
+    expect(new Set(positions.map((p) => p.x.toFixed(4))).size).toBeGreaterThan(1);
+    for (const p of positions) {
+      expect(Math.abs(p.x)).toBeLessThanOrEqual(0.02);
+      expect(Math.abs(p.y)).toBeLessThanOrEqual(0.02);
+      expect(p.scale).toBeCloseTo(1.06);
+    }
+  });
+
+  it("is the same every time it's played", () => {
+    const clip = shaking(0.5);
+    expect(animatedLook(clip, 0.7 * S)).toEqual(animatedLook(clip, 0.7 * S));
+  });
+
+  it("does nothing at zero", () => {
+    const clip = shaking(0);
+    expect(animatedLook(clip, S).transform).toEqual(clip.transform);
+  });
+});

@@ -1,15 +1,16 @@
 import { VideoFrameCursor } from "../media/frame-cursor";
 import type { MediaFile, MediaFiles } from "../media/media-file";
-import type { Clip, Id, Project } from "../project/model";
-import { clipAt } from "../project/query";
-import { sourceTimeAt } from "../project/timing";
+import { type Adjustments, type Clip, type Id, NEUTRAL_ADJUSTMENTS, NO_ENHANCE, type Project } from "../project/model";
+import { clipAt, transitionAt } from "../project/query";
+import { clipEnd, sourceTimeAt } from "../project/timing";
 import type { Micros } from "../time";
-import { animatedLook } from "./animation";
+import { animatedLook, clipSeed } from "./animation";
 import { parseHexColor } from "./color";
-import type { BackgroundFill, Compositor, Layer, Picture } from "./compositor";
+import type { BackgroundFill, Compositor, Grade, Layer, LayerProcessing, Picture, RenderItem } from "./compositor";
 import { layerGeometry } from "./geometry";
 import { MAX_FONT_SIZE, rasterizeText } from "./text";
 import { revealedCharacters } from "./text-layout";
+import { findTransition } from "./transitions";
 
 const BLACK: BackgroundFill = { kind: "color", color: [0, 0, 0] };
 
@@ -23,6 +24,7 @@ const BLACK: BackgroundFill = { kind: "color", color: [0, 0, 0] };
 export class FrameRenderer {
   private readonly cursors = new Map<Id, VideoFrameCursor>();
   private readonly cachedImages = new Set<Id>();
+  private readonly cachedLuts = new Set<Id>();
   /** Each text clip's latest drawing, kept until its words, look or size change. */
   private readonly textRasters = new Map<Id, { key: string; canvas: OffscreenCanvas; scale: number }>();
 
@@ -32,46 +34,40 @@ export class FrameRenderer {
     // Video frames are copies that must be closed once the GPU has them.
     const opened: VideoFrame[] = [];
     try {
-      const layers: Layer[] = [];
+      const items: RenderItem[] = [];
       let mainPicture: Picture | null = null;
 
       for (const [index, track] of project.tracks.entries()) {
         if (track.kind !== "video" || track.hidden) continue;
+        const transition = transitionAt(track, time);
+        const definition = transition && (await findTransition(transition.kind));
+        if (transition && definition) {
+          const { from, to } = transition;
+          // Each side holds its edge frame while the other is on screen.
+          const fromLayer = await this.layerFor(from, files, Math.min(time, clipEnd(from) - 1), opened);
+          const toLayer = await this.layerFor(to, files, Math.max(time, to.start), opened);
+          if (index === 0) mainPicture = (time < to.start ? fromLayer : toLayer)?.picture ?? null;
+          if (fromLayer && toLayer) items.push({ kind: "transition", from: fromLayer, to: toLayer, definition, progress: transition.progress });
+          else if (fromLayer ?? toLayer) items.push((fromLayer ?? toLayer)!);
+          continue;
+        }
+
         const clip = clipAt(track, time);
         if (!clip) continue;
-        const look = animatedLook(clip, time);
-
-        let picture: Picture | null = null;
-        if (clip.text) {
-          picture = await this.textPicture(clip, look.reveal);
-        } else {
-          const file = files.get(clip.assetId);
-          picture = file ? await this.pictureFor(clip, file, time, opened) : null;
-        }
-        if (!picture) continue;
-        if (index === 0) mainPicture = picture;
-        const geometry = layerGeometry({
-          displayWidth: picture.displayWidth,
-          displayHeight: picture.displayHeight,
-          rotation: picture.rotation,
-          flip: picture.flip,
-          transform: look.transform,
-          crop: clip.crop,
-          canvasWidth: this.compositor.width,
-          canvasHeight: this.compositor.height,
-          fit: clip.text ? "natural" : "contain",
-        });
-        layers.push({ picture, model: geometry.model, texture: geometry.texture, opacity: look.transform.opacity });
+        const layer = await this.layerFor(clip, files, time, opened);
+        if (!layer) continue;
+        if (index === 0) mainPicture = layer.picture;
+        items.push(layer);
       }
 
       const background = await this.backgroundFor(project, files, mainPicture);
-      this.compositor.render(background, layers);
+      this.compositor.render(background, items);
     } finally {
       for (const frame of opened) frame.close();
     }
   }
 
-  /** Releases decoders and textures for clips and images that are no longer in the project. */
+  /** Releases decoders and textures for clips, images and LUTs that are no longer in the project. */
   async prune(project: Project): Promise<void> {
     const live = new Set(project.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
     for (const [clipId, cursor] of this.cursors) {
@@ -84,6 +80,11 @@ export class FrameRenderer {
       this.cachedImages.delete(assetId);
       this.compositor.release(imageKey(assetId));
     }
+    for (const assetId of this.cachedLuts) {
+      if (project.assets[assetId]) continue;
+      this.cachedLuts.delete(assetId);
+      this.compositor.release(lutKey(assetId));
+    }
     for (const [clipId, raster] of this.textRasters) {
       if (live.has(clipId)) continue;
       this.textRasters.delete(clipId);
@@ -95,6 +96,80 @@ export class FrameRenderer {
     const cursors = [...this.cursors.values()];
     this.cursors.clear();
     await Promise.all(cursors.map((cursor) => cursor.close()));
+  }
+
+  private async layerFor(clip: Clip, files: MediaFiles, time: Micros, opened: VideoFrame[]): Promise<Layer | null> {
+    const look = animatedLook(clip, time);
+    let picture: Picture | null = null;
+    if (clip.text) {
+      picture = await this.textPicture(clip, look.reveal);
+    } else {
+      const file = files.get(clip.assetId);
+      picture = file ? await this.pictureFor(clip, file, time, opened) : null;
+    }
+    if (!picture) return null;
+
+    const geometry = layerGeometry({
+      displayWidth: picture.displayWidth,
+      displayHeight: picture.displayHeight,
+      rotation: picture.rotation,
+      flip: picture.flip,
+      transform: look.transform,
+      crop: clip.crop,
+      canvasWidth: this.compositor.width,
+      canvasHeight: this.compositor.height,
+      fit: clip.text ? "natural" : "contain",
+    });
+    return {
+      picture,
+      model: geometry.model,
+      texture: geometry.texture,
+      crop: clip.crop,
+      opacity: look.transform.opacity,
+      processing: this.processingFor(clip, files, time),
+      mask: clip.mask ?? null,
+      blend: clip.blend ?? "normal",
+    };
+  }
+
+  /** What to do to a clip's pixels, or null when it's shown untouched. */
+  private processingFor(clip: Clip, files: MediaFiles, time: Micros): LayerProcessing | null {
+    const enhance = clip.enhance ?? NO_ENHANCE;
+    const lutFile = clip.lut && files.get(clip.lut.assetId);
+    let lut: Grade["lut"] = null;
+    if (clip.lut && lutFile?.lut && clip.lut.intensity > 0) {
+      this.cachedLuts.add(clip.lut.assetId);
+      lut = { cacheKey: lutKey(clip.lut.assetId), lut: lutFile.lut, intensity: clip.lut.intensity };
+    }
+    const key = clip.chromaKey && { ...clip.chromaKey, color: parseHexColor(clip.chromaKey.color) };
+    const adjusted = clip.adjust && !isNeutral(clip.adjust);
+    const grade: Grade | null =
+      adjusted || lut || key || enhance.autoColor
+        ? {
+            black: enhance.autoColor?.black ?? [0, 0, 0],
+            white: enhance.autoColor?.white ?? [1, 1, 1],
+            adjust: clip.adjust ?? NEUTRAL_ADJUSTMENTS,
+            lut,
+            key: key ?? null,
+          }
+        : null;
+    const effects: LayerProcessing["effects"] = (clip.effects ?? []).flatMap((effect) =>
+      effect.kind !== "shake" && effect.amount > 0 ? [{ kind: effect.kind, amount: effect.amount }] : [],
+    );
+
+    const cleanup = enhance.denoise > 0 || enhance.deband > 0 || enhance.deblock > 0;
+    if (!grade && effects.length === 0 && !cleanup && enhance.sharpen <= 0 && !enhance.upscale) return null;
+    return {
+      denoise: enhance.denoise,
+      deband: enhance.deband,
+      deblock: enhance.deblock,
+      grade,
+      effects,
+      sharpen: enhance.sharpen,
+      upscale: enhance.upscale,
+      time: (time - clip.start) / 1_000_000,
+      seed: clipSeed(clip.id),
+    };
   }
 
   private async pictureFor(clip: Clip, file: MediaFile, time: Micros, opened: VideoFrame[]): Promise<Picture | null> {
@@ -182,6 +257,14 @@ export class FrameRenderer {
   }
 }
 
+function isNeutral(adjust: Adjustments): boolean {
+  return Object.values(adjust).every((value) => value === 0);
+}
+
 function imageKey(assetId: Id): string {
   return `image:${assetId}`;
+}
+
+function lutKey(assetId: Id): string {
+  return `lut:${assetId}`;
 }

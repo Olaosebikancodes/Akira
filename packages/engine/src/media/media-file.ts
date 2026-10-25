@@ -9,6 +9,7 @@ import {
 } from "mediabunny";
 import type { Asset, Id } from "../project/model";
 import { FPS_30, type FrameRate, frameRateFromNumber, secondsToMicros } from "../time";
+import { type CubeLut, LutError, parseCube } from "../render/cube-lut";
 import { isFontFile, registerFontFile } from "../render/fonts";
 import { ImageSource } from "./image-source";
 
@@ -54,10 +55,13 @@ export class MediaFile {
     /** Problems that don't stop the file from being used, for the UI to show. */
     readonly warnings: readonly string[],
     readonly image: ImageSource | null = null,
+    /** Set on .cube colour lookup tables. */
+    readonly lut: CubeLut | null = null,
   ) {}
 
   static async open(file: File): Promise<MediaFile> {
     if (isFontFile(file)) return MediaFile.openFont(file);
+    if (isLutFile(file)) return MediaFile.openLut(file);
     if (file.type.startsWith("image/")) return MediaFile.openImage(file);
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
     try {
@@ -83,6 +87,18 @@ export class MediaFile {
     }
     const info: MediaInfo = { kind: "font", name: file.name, start: 0, duration: 0, font: { family } };
     return new MediaFile(file, null, info, null, null, []);
+  }
+
+  private static async openLut(file: File): Promise<MediaFile> {
+    let lut: CubeLut;
+    try {
+      lut = parseCube(await file.text());
+    } catch (error) {
+      const reason = error instanceof LutError ? ` ${error.message}` : "";
+      throw new UnsupportedMediaError(`${file.name} isn't a LUT Akira can use.${reason}`);
+    }
+    const info: MediaInfo = { kind: "lut", name: file.name, start: 0, duration: 0, lut: { size: lut.size } };
+    return new MediaFile(file, null, info, null, null, [], null, lut);
   }
 
   private static async openImage(file: File): Promise<MediaFile> {
@@ -170,6 +186,11 @@ export class MediaFile {
       warnings,
     );
   }
+}
+
+/** Colour lookup tables in the Adobe/Resolve .cube format. */
+export function isLutFile(file: File): boolean {
+  return /\.cube$/i.test(file.name);
 }
 
 async function describeVideo(track: InputVideoTrack): Promise<NonNullable<Asset["video"]>> {

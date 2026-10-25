@@ -20,7 +20,7 @@ export function animatedLook(clip: Clip, time: Micros): AnimatedLook {
   const animation = clip.animation;
   const transform = { ...clip.transform };
   let reveal = 1;
-  if (!animation) return { transform, reveal };
+  if (!animation) return { transform: shaken(clip, transform, time), reveal };
 
   const into = time - clip.start;
   const length = clipDuration(clip);
@@ -81,7 +81,37 @@ export function animatedLook(clip: Clip, time: Micros): AnimatedLook {
     }
   }
 
-  return { transform, reveal };
+  return { transform: shaken(clip, transform, time), reveal };
+}
+
+/**
+ * The shake effect jitters a clip's position and angle, zooming in a little
+ * so the edges stay hidden. The same time always gives the same offset.
+ */
+function shaken(clip: Clip, transform: Transform, time: Micros): Transform {
+  const amount = clip.effects?.find((effect) => effect.kind === "shake")?.amount ?? 0;
+  if (amount <= 0) return transform;
+  const t = (time - clip.start) / 1_000_000;
+  const seed = clipSeed(clip.id);
+  return {
+    ...transform,
+    x: transform.x + amount * 0.02 * wobble(t, seed),
+    y: transform.y + amount * 0.02 * wobble(t, seed + 1),
+    rotation: transform.rotation + amount * 1.5 * wobble(t, seed + 2),
+    scale: transform.scale * (1 + amount * 0.06),
+  };
+}
+
+/** Smooth, irregular movement between -1 and 1 from sines whose periods never line up. */
+function wobble(t: number, seed: number): number {
+  return 0.6 * Math.sin(t * 23.1 + seed * 7.13) + 0.4 * Math.sin(t * 37.7 + seed * 3.71);
+}
+
+/** A number from 0 to 1000 that's stable for a clip, so random effects differ between clips. */
+export function clipSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(hash) % 1000;
 }
 
 function clamp01(value: number): number {
