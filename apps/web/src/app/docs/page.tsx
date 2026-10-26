@@ -35,6 +35,7 @@ const SECTIONS = [
   ["motion", "Motion"],
   ["saving", "Saving and moving projects"],
   ["export", "Exporting, and TikTok"],
+  ["phone", "On a phone"],
   ["shortcuts", "Keyboard shortcuts"],
   ["privacy", "Privacy and browsers"],
 ] as const;
@@ -70,8 +71,8 @@ export default function DocsPage() {
         <main className="max-w-2xl">
           <h1 className="text-4xl font-semibold tracking-tight">Docs</h1>
           <p className="mt-4 text-pretty leading-relaxed text-muted">
-            Everything Akira does, and where to find it. It’s built for laptops and desktops; open it in Chrome or Edge for the
-            best results.
+            Everything Akira does, and where to find it. It works best on a laptop or desktop in Chrome or Edge, and has a
+            touch layout for phones.
           </p>
 
           <Section id="start" title="Getting started">
@@ -148,6 +149,18 @@ export default function DocsPage() {
               possible start. For the best result, turn on <em>Upload HD</em> in TikTok’s settings, upload the exported file
               straight from your phone or computer rather than sending it through WhatsApp or another app first, and turn on the
               safe-zone guide in the preview so captions stay clear of TikTok’s buttons.
+            </p>
+          </Section>
+
+          <Section id="phone" title="On a phone">
+            <p>
+              On a screen narrower than a laptop’s, the editor lays itself out like a phone app: the preview on top, the timeline
+              under it, and <em>Media</em>, <em>Text</em>, <em>Effects</em> and <em>Edit</em> along the bottom. Each opens over
+              the timeline and leaves the preview in view; <em>Edit</em> holds the selected clip’s settings.
+            </p>
+            <p>
+              On the timeline, tap a clip to select it and tap an empty spot to move the playhead there. Swipe to scroll and pinch to
+              zoom. Once a clip is selected, drag it to move it or drag its edges to trim. Drag along the ruler to scrub.
             </p>
           </Section>
 

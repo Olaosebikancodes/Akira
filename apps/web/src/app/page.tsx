@@ -84,7 +84,7 @@ export default function Home() {
                 Read the docs
               </Link>
             </div>
-            <p className="text-xs text-subtle">Works best in Chrome or Edge on a laptop or desktop.</p>
+            <p className="text-xs text-subtle">Works best in Chrome or Edge on a laptop or desktop. Phones get a touch layout.</p>
           </div>
           <TimelineArt />
         </section>

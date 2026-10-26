@@ -79,3 +79,8 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Enhance for TikTok preset, safe-zone overlay and upload tips
 - [x] Landing page and docs, plus a first-run tour of the editor
 - [ ] Deploy to Vercel
+
+## 11. Phones ✅
+
+- [x] Phone layout below 1024 px: preview, timeline, and tools that open as sheets
+- [x] Touch timeline: tap to select or seek, swipe to scroll, pinch to zoom

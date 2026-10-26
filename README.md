@@ -17,6 +17,7 @@ No AI and no uploads. Your footage never leaves your machine: decoding, effects 
 - **Enhance:** sharpen, denoise, FSR 1 upscaling, auto colour and deband
 - **Audio:** multiple tracks with fades and waveforms, voiceover recording and noise reduction
 - **Export:** MP4 (H.264/AAC) and WebM up to 4K, plus a TikTok preset that prepares footage to survive TikTok's re-compression
+- **Phones:** below 1024 px wide the editor switches to a phone layout, with tools in sheets along the bottom and a touch timeline: tap to select, swipe to scroll, pinch to zoom
 
 ## How it's built
 
@@ -53,7 +54,7 @@ Akira is a static Next.js app, so any static host works; Vercel is the simplest.
 
 ## Browser support
 
-Chrome and Edge on desktop are fully supported. Firefox desktop and Safari 26 are best-effort: Akira checks which codecs the browser supports and falls back where it can.
+Chrome and Edge on desktop are fully supported. Firefox desktop and Safari 26 are best-effort: Akira checks which codecs the browser supports and falls back where it can. The phone layout is tested in Chrome's touch emulation; on a real phone, Chrome on Android is the best bet.
 
 ## License
 
