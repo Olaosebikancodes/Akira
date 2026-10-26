@@ -345,6 +345,72 @@ test("draws waveforms on clips with sound", async ({ page }) => {
   await expect(clips(page, "colors.mp4").locator("canvas[data-waveform]")).toHaveCount(1);
 });
 
+/**
+ * Records every stretch of sound playback schedules, in audio-context time,
+ * so a test can find gaps. Must run before the page loads.
+ */
+async function recordScheduledSound(page: Page) {
+  await page.addInitScript(() => {
+    const spans: [number, number][] = [];
+    const scope = window as unknown as { soundSpans: [number, number][]; soundContext: BaseAudioContext | null };
+    scope.soundSpans = spans;
+    scope.soundContext = null;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (when = 0, offset = 0, duration?: number) {
+      // Only live playback counts; waveforms are drawn with offline contexts.
+      if (!(this.context instanceof AudioContext)) return start.call(this, when, offset, duration);
+      scope.soundContext = this.context;
+      const length = (duration ?? this.buffer!.duration - offset) / this.playbackRate.value;
+      spans.push([Math.max(when, this.context.currentTime), when + length]);
+      return start.call(this, when, offset, duration);
+    };
+  });
+  await page.reload();
+  await page.getByLabel("Video preview").waitFor();
+}
+
+/** How much of a stretch of audio-context time had sound scheduled, 0 to 1. */
+async function soundCoverage(page: Page, from: number, to: number): Promise<number> {
+  const spans = await page.evaluate(() => (window as unknown as { soundSpans: [number, number][] }).soundSpans);
+  let covered = 0;
+  let reached = from;
+  for (const [start, end] of [...spans].sort((a, b) => a[0] - b[0])) {
+    const a = Math.max(start, reached);
+    const b = Math.min(end, to);
+    if (b > a) covered += b - a;
+    reached = Math.max(reached, Math.min(end, to));
+  }
+  return covered / (to - from);
+}
+
+async function audioTime(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { soundContext: BaseAudioContext }).soundContext.currentTime);
+}
+
+test("plays sound without gaps while the inspector is open, even through a stall", async ({ page }) => {
+  await recordScheduledSound(page);
+  await addClip(page, FIXTURES.long);
+  await expect(page.getByLabel("Position X value")).toBeVisible();
+  await page.keyboard.press("Home");
+  await page.getByRole("button", { name: "Play" }).click();
+  await page.waitForTimeout(3000);
+  const steady = await audioTime(page);
+  expect(await soundCoverage(page, 0.3, steady)).toBeGreaterThan(0.97);
+
+  // Freeze the page for 1.5 s, as a heavy tab can. Sound is decoded in a worker and
+  // scheduled 2 s ahead, so it should carry straight through and keep going after.
+  await page.evaluate(() => {
+    const until = performance.now() + 1500;
+    while (performance.now() < until) {
+      // Busy on purpose.
+    }
+  });
+  const thawed = await audioTime(page);
+  await page.waitForTimeout(2500);
+  expect(await soundCoverage(page, steady, thawed + 2.2)).toBeGreaterThan(0.97);
+  await page.keyboard.press(" ");
+});
+
 test("fades the sound in", async ({ page }) => {
   await addClip(page, FIXTURES.colors);
   await setNumber(page, "Fade in", 1);
