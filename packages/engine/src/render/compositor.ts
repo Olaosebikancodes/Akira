@@ -33,6 +33,8 @@ export interface Picture {
    * reused; video frames leave it unset and stream through a shared texture.
    */
   cacheKey?: string;
+  /** For frame blending: the following frame, mixed in by `amount` (0 to 1). Same size and orientation. */
+  next?: { source: VideoFrame; amount: number };
 }
 
 /** Colour work done in one pass: auto colour, adjustments, a LUT and a chroma key. */
@@ -101,6 +103,18 @@ export interface CompositorOptions {
 }
 
 const IDENTITY: Mat3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+/** Processing that changes nothing, for layers that only need frame blending. */
+const NO_PROCESSING: LayerProcessing = {
+  denoise: 0,
+  deband: 0,
+  deblock: 0,
+  grade: null,
+  effects: [],
+  sharpen: 0,
+  upscale: false,
+  time: 0,
+  seed: 0,
+};
 /** Processing never works on more pixels than this per side. */
 const MAX_WORKING_SIZE = 4096;
 /** Texture units: pictures on 0, what's beneath a blended layer on 1, LUTs on 2. */
@@ -160,6 +174,8 @@ export class Compositor {
   private readonly programs = new Map<string, Program>();
   private readonly quad: WebGLVertexArrayObject;
   private readonly streamTexture: WebGLTexture;
+  /** The second frame of a blended pair streams through here. */
+  private readonly nextTexture: WebGLTexture;
   private readonly emptyLut: WebGLTexture;
   private readonly cache = new Map<string, CachedTexture>();
   private readonly luts = new Map<string, WebGLTexture>();
@@ -180,6 +196,7 @@ export class Compositor {
     this.gl = gl;
     this.quad = createUnitQuad(gl);
     this.streamTexture = createTexture(gl, true);
+    this.nextTexture = createTexture(gl, true);
     this.emptyLut = createLutTexture(gl, 2, new Float32Array(2 * 2 * 2 * 3));
     this.pool = new TargetPool(gl);
   }
@@ -249,6 +266,7 @@ export class Compositor {
     if (this.frame) deleteTarget(gl, this.frame);
     for (const program of new Set(this.programs.values())) program.dispose();
     gl.deleteTexture(this.streamTexture);
+    gl.deleteTexture(this.nextTexture);
     gl.deleteTexture(this.emptyLut);
     gl.deleteVertexArray(this.quad);
     // Browsers allow only a handful of live contexts, so give this one back now.
@@ -340,8 +358,8 @@ export class Compositor {
   private process(layer: Layer): { texture: WebGLTexture; matrix: Mat3 } {
     const { gl } = this;
     const source = this.bindPicture(layer.picture);
-    const work = layer.processing;
-    if (!work) return { texture: source, matrix: layer.texture };
+    if (!layer.processing && !layer.picture.next) return { texture: source, matrix: layer.texture };
+    const work = layer.processing ?? NO_PROCESSING;
 
     const { picture, crop } = layer;
     const visibleWidth = 1 - crop.left - crop.right;
@@ -360,7 +378,18 @@ export class Compositor {
     let current = this.pool.acquire(width, height);
     this.bindTarget(current);
     gl.disable(gl.BLEND);
-    this.drawTexture(source, fullTarget(width, height), textureTransform(picture.rotation, picture.flip), width, height, 1);
+    const upright = textureTransform(picture.rotation, picture.flip);
+    this.drawTexture(source, fullTarget(width, height), upright, width, height, 1);
+    if (picture.next) {
+      // Frame blending: lay the next frame over this one, `amount` of the way in.
+      gl.bindTexture(gl.TEXTURE_2D, this.nextTexture);
+      upload(gl, picture.next.source);
+      gl.enable(gl.BLEND);
+      gl.blendColor(0, 0, 0, picture.next.amount);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+      this.drawTexture(this.nextTexture, fullTarget(width, height), upright, width, height, 1);
+      gl.disable(gl.BLEND);
+    }
 
     const pass = (name: ProgramName, setup: (program: Program) => void, outWidth = width, outHeight = height) => {
       const next = this.pool.acquire(outWidth, outHeight);

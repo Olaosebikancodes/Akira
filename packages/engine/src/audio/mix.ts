@@ -33,7 +33,7 @@ export async function renderAudioMix(project: Project, files: MediaFiles, durati
   for (const clip of audibleClips(project, files)) {
     const chain = connectClipChain(context, context.destination, clip.clip, PREROLL_SECONDS, 0);
     for await (const placed of clipAudio(clip, 0)) {
-      playPlacedBuffer(context, chain.input, placed, clip.clip.speed, PREROLL_SECONDS - chain.latency);
+      playPlacedBuffer(context, chain.input, placed, clip.clip, PREROLL_SECONDS - chain.latency);
     }
   }
 

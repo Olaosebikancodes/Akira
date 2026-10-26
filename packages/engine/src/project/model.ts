@@ -141,6 +141,20 @@ export interface Clip {
   transition?: ClipTransition;
   /** Values that change over the clip. A property without keyframes uses the clip's own value. */
   keyframes?: ClipKeyframes;
+  /** Speed that changes over the clip. While set, it replaces `speed`. */
+  speedCurve?: SpeedPoint[];
+  /** Mixes neighbouring frames while the clip plays slower than it was filmed, for smoother slow motion. */
+  frameBlending?: boolean;
+}
+
+/**
+ * A point on a speed curve. Like keyframes, points sit at source times, so
+ * a ramp stays on the same moment of footage through trims and splits.
+ * Speed eases smoothly from one point to the next.
+ */
+export interface SpeedPoint {
+  time: Micros;
+  speed: number;
 }
 
 /** What can be keyframed: the transform's numbers, plus volume. */

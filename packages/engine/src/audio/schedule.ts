@@ -2,7 +2,7 @@ import type { AudioBufferSink } from "mediabunny";
 import type { MediaFiles } from "../media/media-file";
 import type { Clip, Project } from "../project/model";
 import { isAudible } from "../project/query";
-import { clipEnd, toSourceTime } from "../project/timing";
+import { clipEnd, rateAt, toSourceTime, toTimelineTime } from "../project/timing";
 import { type Micros, microsToSeconds, secondsToMicros } from "../time";
 import { type AudioPlacement, placeAudioBuffer } from "./placement";
 
@@ -64,25 +64,48 @@ export function playPlacedBuffer(
   context: BaseAudioContext,
   destination: AudioNode,
   { buffer, placement }: PlacedBuffer,
-  speed: number,
+  clip: Clip,
   timelineOrigin: number,
 ): AudioBufferSourceNode | null {
-  let when = timelineOrigin + microsToSeconds(placement.at);
-  let offset = microsToSeconds(placement.offset);
-  let duration = microsToSeconds(placement.duration);
+  let at = placement.at;
+  let offset = placement.offset;
+  let duration = placement.duration;
 
-  const late = context.currentTime - when;
+  const late = secondsToMicros(context.currentTime - timelineOrigin) - at;
   if (late > 0) {
-    when += late;
-    offset += late * speed;
-    duration -= late * speed;
+    const skipped = Math.round(late * rateAt(clip, at));
+    at += late;
+    offset += skipped;
+    duration -= skipped;
     if (duration <= 0) return null;
   }
 
   const node = context.createBufferSource();
   node.buffer = buffer;
-  node.playbackRate.value = speed;
   node.connect(destination);
-  node.start(when, offset, duration);
+  const when = timelineOrigin + microsToSeconds(at);
+  if (clip.speedCurve) followCurve(node.playbackRate, clip, at, duration, when);
+  else node.playbackRate.value = clip.speed;
+  node.start(when, microsToSeconds(offset), microsToSeconds(duration));
   return node;
+}
+
+/** Rate samples per second of timeline when following a speed curve; Web Audio joins them with straight lines. */
+const CURVE_RATE_SAMPLES = 100;
+
+/**
+ * Automates a node's playback rate along the clip's speed curve, so the
+ * buffer plays through its footage exactly as fast as the picture does.
+ */
+function followCurve(rate: AudioParam, clip: Clip, at: Micros, duration: Micros, when: number): void {
+  // `duration` is source time: how much of the buffer plays, starting at timeline time `at`.
+  const span = toTimelineTime(clip, toSourceTime(clip, at) + duration) - at;
+  if (span <= 0) {
+    rate.value = rateAt(clip, at);
+    return;
+  }
+  const count = Math.max(2, Math.ceil(microsToSeconds(span) * CURVE_RATE_SAMPLES) + 1);
+  const values = new Float32Array(count);
+  for (let i = 0; i < count; i++) values[i] = rateAt(clip, at + (span * i) / (count - 1));
+  rate.setValueCurveAtTime(values, when, microsToSeconds(span));
 }

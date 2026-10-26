@@ -18,6 +18,7 @@ export { type Cue, parseSrt } from "./project/captions";
 export * from "./project/create";
 export * from "./project/edit";
 export * from "./project/keyframes";
+export * from "./project/speed-curve";
 export * from "./project/model";
 export * from "./project/query";
 export * from "./project/snap";

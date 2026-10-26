@@ -2,7 +2,7 @@ import { VideoFrameCursor } from "../media/frame-cursor";
 import type { MediaFile, MediaFiles } from "../media/media-file";
 import { type Adjustments, type Clip, type Id, NEUTRAL_ADJUSTMENTS, NO_ENHANCE, type Project } from "../project/model";
 import { clipAt, transitionAt } from "../project/query";
-import { clipEnd, sourceTimeAt } from "../project/timing";
+import { clipEnd, rateAt, sourceTimeAt } from "../project/timing";
 import type { Micros } from "../time";
 import { animatedLook, clipSeed } from "./animation";
 import { parseHexColor } from "./color";
@@ -177,17 +177,31 @@ export class FrameRenderer {
     if (!file.video) return null;
 
     const sourceTime = clip.freezeAt ?? sourceTimeAt(clip, time);
-    const sample = await this.cursorFor(clip, file.video).frameAt(sourceTime);
+    const cursor = this.cursorFor(clip, file.video);
+    const sample = await cursor.frameAt(sourceTime);
     if (!sample) return null;
     const frame = sample.toVideoFrame();
     opened.push(frame);
-    return {
+    const picture: Picture = {
       source: frame,
       displayWidth: sample.displayWidth,
       displayHeight: sample.displayHeight,
       rotation: sample.rotation,
       flip: sample.flip,
     };
+
+    // In slow motion each frame would show several times; blending moves smoothly between them instead.
+    const next = cursor.next;
+    if (clip.frameBlending && clip.freezeAt === undefined && next && rateAt(clip, time) < 1) {
+      const gap = next.microsecondTimestamp - sample.microsecondTimestamp;
+      const amount = gap > 0 ? (sourceTime - sample.microsecondTimestamp) / gap : 0;
+      if (amount > 0.01) {
+        const nextFrame = next.toVideoFrame();
+        opened.push(nextFrame);
+        picture.next = { source: nextFrame, amount: Math.min(1, amount) };
+      }
+    }
+    return picture;
   }
 
   /**

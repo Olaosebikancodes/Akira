@@ -24,6 +24,7 @@ import {
   NEUTRAL_ADJUSTMENTS,
   NO_ENHANCE,
   type Project,
+  type SpeedPoint,
   type Track,
   type TextStyle,
   type TrackKind,
@@ -38,8 +39,9 @@ import {
   transformAt,
   withoutKeyframes,
 } from "./keyframes";
-import { assetOf, followingClip, isStill, locateClip } from "./query";
-import { clipDuration, clipEnd, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
+import { assetOf, type ClipLocation, followingClip, isStill, locateClip } from "./query";
+import { MAX_CURVE_SPEED, MIN_CURVE_SPEED, presetPoints, SPEED_PRESETS } from "./speed-curve";
+import { clipDuration, clipEnd, rateAt, sourceTimeAt, toSourceTime, toTimelineTime } from "./timing";
 
 /*
  * Every edit is a pure function from one project to the next. The editor's
@@ -269,6 +271,7 @@ export function freezeFrame(
     sourceIn: 0,
     sourceOut: duration,
     freezeAt: sourceTimeAt(clip, time),
+    speedCurve: undefined,
     // The frozen picture holds the clip's look at that moment.
     transform: transformAt(clip, time),
     keyframes: undefined,
@@ -325,12 +328,50 @@ export function detachAudio(project: Project, clipId: Id): DetachResult {
   return { project: normalize(next), audioClipId: audioClip.id };
 }
 
-/** Changes playback speed, keeping the clip's start. Later clips on its track move to make room. */
+/**
+ * Changes playback to a constant speed, keeping the clip's start and
+ * dropping any speed curve. Later clips on its track move to make room.
+ */
 export function setClipSpeed(project: Project, clipId: Id, speed: number): Project {
   const found = locateClip(project, clipId);
   if (!found || found.track.locked || isStill(project, found.clip)) return project;
+  return retime(project, found, { ...found.clip, speed: clamp(speed, MIN_SPEED, MAX_SPEED), speedCurve: undefined });
+}
+
+/**
+ * Gives a clip a speed curve, or returns it to constant speed with null.
+ * Points are kept in order with speeds in range, and the clip's start
+ * stays put while its length changes.
+ */
+export function setSpeedCurve(project: Project, clipId: Id, points: readonly SpeedPoint[] | null): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || isStill(project, found.clip)) return project;
+  if (!points) return retime(project, found, { ...found.clip, speedCurve: undefined });
+  const curve = [...points]
+    .map((point) => ({ time: Math.round(point.time), speed: clamp(point.speed, MIN_CURVE_SPEED, MAX_CURVE_SPEED) }))
+    .sort((a, b) => a.time - b.time);
+  if (curve.length < 2) return project;
+  return retime(project, found, { ...found.clip, speedCurve: curve });
+}
+
+/** Turns frame blending on or off, for smoother slow motion. */
+export function setFrameBlending(project: Project, clipId: Id, on: boolean): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || isStill(project, found.clip)) return project;
+  return replaceClip(project, found.trackIndex, { ...found.clip, frameBlending: on || undefined });
+}
+
+/** Spreads a preset ramp across the clip's footage. */
+export function applySpeedPreset(project: Project, clipId: Id, presetId: string): Project {
+  const clip = locateClip(project, clipId)?.clip;
+  const preset = SPEED_PRESETS.find((p) => p.id === presetId);
+  if (!clip || !preset) return project;
+  return setSpeedCurve(project, clipId, presetPoints(preset, clip.sourceIn, clip.sourceOut));
+}
+
+/** Replaces a clip whose length changed, moving later clips on other tracks out of its way. */
+function retime(project: Project, found: ClipLocation, next: Clip): Project {
   const { clip, track, trackIndex } = found;
-  const next = { ...clip, speed: clamp(speed, MIN_SPEED, MAX_SPEED) };
   let updated = replaceClip(project, trackIndex, next);
 
   if (trackIndex !== 0) {
@@ -486,7 +527,7 @@ export function setKeyframeEasing(project: Project, clipId: Id, property: Keyfra
 /** The keyframe on the playhead, within half a frame either side. */
 export function keyframeAt(project: Project, clip: Clip, property: KeyframeProperty, time: Micros): Keyframe | undefined {
   const at = clockInside(clip, time);
-  const tolerance = (frameToMicros(1, project.canvas.frameRate) * clip.speed) / 2;
+  const tolerance = (frameToMicros(1, project.canvas.frameRate) * rateAt(clip, time)) / 2;
   return clip.keyframes?.[property]?.find((k) => Math.abs(k.time - at) <= tolerance);
 }
 

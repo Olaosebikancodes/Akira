@@ -255,7 +255,7 @@ class AudioSession {
         this.context,
         chain.input,
         placed,
-        clip.clip.speed,
+        clip.clip,
         this.timelineOrigin - chain.latency,
       );
       if (!node) continue;

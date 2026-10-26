@@ -33,6 +33,11 @@ export class VideoFrameCursor {
     return this.current;
   }
 
+  /** The frame after the last one `frameAt` returned, for blending between them. Owned like `frameAt`'s. */
+  get next(): VideoSample | null {
+    return this.upcoming;
+  }
+
   async close(): Promise<void> {
     await this.reset();
   }
