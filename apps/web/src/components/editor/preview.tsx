@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { seekToEdit, stepFrames } from "./actions";
 import { CanvasOverlay } from "./canvas-overlay";
+import { TrackingOverlay } from "./tracking-overlay";
 import { fontBaseUrl, notify, togglePlayback, useEditor } from "./store";
 import { IconButton } from "./ui";
 
@@ -23,6 +24,7 @@ export function Preview() {
   const project = useEditor((s) => s.project);
   const files = useEditor((s) => s.files);
   const empty = project.tracks.every((track) => track.clips.length === 0);
+  const tracking = useEditor((s) => s.trackingSetup !== null);
 
   useEffect(() => {
     // A canvas can be handed to a worker only once, so every mount makes a fresh one.
@@ -71,7 +73,7 @@ export function Preview() {
     <section aria-label="Preview" className="flex min-h-0 min-w-0 flex-col bg-stage">
       <div ref={stageRef} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
         <div ref={hostRef} className="relative" style={{ width: Math.floor(width * scale), height: Math.floor(height * scale) }}>
-          {!empty && scale > 0 && <CanvasOverlay scale={scale} />}
+          {!empty && scale > 0 && (tracking ? <TrackingOverlay /> : <CanvasOverlay scale={scale} />)}
         </div>
         {empty && (
           <p className="absolute max-w-xs text-center text-sm text-muted">

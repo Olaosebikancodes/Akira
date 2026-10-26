@@ -94,6 +94,8 @@ interface EditorState {
   /** True while a saved project's media is being opened. */
   opening: boolean;
   jobs: Job[];
+  /** Set while the user draws a box on the canvas around something for a clip to follow. */
+  trackingSetup: { followerId: Id; followScale: boolean } | null;
 }
 
 function blankProject(): Project {
@@ -133,6 +135,7 @@ export const useEditor = create<EditorState>(() => ({
   player: null,
   opening: false,
   jobs: [],
+  trackingSetup: null,
 }));
 
 const set = useEditor.setState;
@@ -276,6 +279,29 @@ export function updateJob(id: Id, progress: number): void {
 
 export function finishJob(id: Id): void {
   set({ jobs: get().jobs.filter((job) => job.id !== id) });
+}
+
+/**
+ * Changes an asset, such as storing motion measured from it. Like adding
+ * one, it isn't an undo step: every snapshot gets the change, so undo never
+ * loses work done in the background.
+ */
+export function updateAsset(assetId: Id, change: Partial<Asset>): void {
+  const withChange = (project: Project): Project => {
+    const asset = project.assets[assetId];
+    return asset ? { ...project, assets: { ...project.assets, [assetId]: { ...asset, ...change } } } : project;
+  };
+  const { project, past, future, gestureStart } = get();
+  set({
+    project: withChange(project),
+    past: past.map(withChange),
+    future: future.map(withChange),
+    gestureStart: gestureStart && withChange(gestureStart),
+  });
+}
+
+export function setTrackingSetup(trackingSetup: EditorState["trackingSetup"]): void {
+  set({ trackingSetup });
 }
 
 /** Adds media Akira made itself, such as a reversed copy. It isn't shown in the media panel. */

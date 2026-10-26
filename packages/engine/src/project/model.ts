@@ -85,6 +85,21 @@ export interface Asset {
     start: Micros;
     end: Micros;
   };
+  /** How the camera moved, measured in the background for stabilising. Kept so it's only measured once. */
+  motion?: CameraMotion;
+}
+
+/** A camera's path through part of an asset, frame by frame, measured from the footage. */
+export interface CameraMotion {
+  /** The measured part of the asset. */
+  start: Micros;
+  end: Micros;
+  /**
+   * Where the camera had moved by each frame since `start`: movement in
+   * fractions of the frame, rotation in radians (clockwise) and zoom as a
+   * natural log, so each adds up from frame to frame.
+   */
+  frames: { time: Micros; x: number; y: number; angle: number; logScale: number }[];
 }
 
 export const TEXT_ASSET_ID = "text";
@@ -154,6 +169,8 @@ export interface Clip {
   speedCurve?: SpeedPoint[];
   /** Mixes neighbouring frames while the clip plays slower than it was filmed, for smoother slow motion. */
   frameBlending?: boolean;
+  /** Steadies shaky footage using its asset's measured camera motion. Strength runs 0 to 1. */
+  stabilize?: { strength: number };
 }
 
 /**

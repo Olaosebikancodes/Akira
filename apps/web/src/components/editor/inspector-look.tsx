@@ -23,6 +23,7 @@ import {
 import { XIcon } from "@phosphor-icons/react";
 import { useId } from "react";
 import { useTransitions } from "./effects-panel";
+import { StabilizeSection } from "./inspector-motion";
 import { autoColor, EFFECTS, effectLabel } from "./look";
 import { commit, endGesture, liveEdit, useEditor } from "./store";
 import { Button, focusRing, IconButton, Section, Segmented, SelectField, SliderField, Toggle } from "./ui";
@@ -249,11 +250,12 @@ export function EffectsTab({ clip }: { clip: Clip }) {
   );
 }
 
-/** Sharpening, clean-up, auto colour and FSR upscaling. */
+/** Sharpening, clean-up, auto colour and FSR upscaling, plus stabilising. */
 export function EnhanceTab({ clip }: { clip: Clip }) {
   const { live, set } = lookEditors(clip);
   const enhance = clip.enhance ?? NO_ENHANCE;
   const hasThumbnails = useEditor((s) => (s.thumbnails.get(clip.assetId)?.length ?? 0) > 0);
+  const hasVideo = useEditor((s) => s.project.assets[clip.assetId]?.video !== undefined && clip.freezeAt === undefined);
 
   function oneTap() {
     set({ enhance: { sharpen: 0.35, denoise: 0.25, deband: 0.3, upscale: true } });
@@ -295,6 +297,8 @@ export function EnhanceTab({ clip }: { clip: Clip }) {
         />
         <Button onClick={() => set({ enhance: NO_ENHANCE })}>Reset enhance</Button>
       </Section>
+
+      {hasVideo && <StabilizeSection clip={clip} />}
     </>
   );
 }

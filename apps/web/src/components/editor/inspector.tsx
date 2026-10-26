@@ -39,6 +39,7 @@ import {
 import { ArrowClockwiseIcon, FlipHorizontalIcon, FlipVerticalIcon } from "@phosphor-icons/react";
 import { useId, useState } from "react";
 import { ColourTab, EffectsTab, EnhanceTab, TransitionSection } from "./inspector-look";
+import { TrackingSection } from "./inspector-motion";
 import { AnimationSection, TextSections } from "./inspector-text";
 import { KeyframeButton, KeyframesSection } from "./keyframe-controls";
 import { SpeedSection } from "./speed-section";
@@ -172,6 +173,8 @@ function ClipInspector({
       {isVisual && <TransitionSection project={project} clip={clip} />}
 
       {isVisual && <AnimationSection clip={clip} />}
+
+      {isVisual && <TrackingSection clip={clip} />}
 
       {!still && <SpeedSection clip={clip} />}
 

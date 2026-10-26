@@ -1,6 +1,7 @@
 import { VideoFrameCursor } from "../media/frame-cursor";
 import type { MediaFile, MediaFiles } from "../media/media-file";
-import { type Adjustments, type Clip, type Id, NEUTRAL_ADJUSTMENTS, NO_ENHANCE, type Project } from "../project/model";
+import { type Adjustments, type Clip, type Id, NEUTRAL_ADJUSTMENTS, NO_ENHANCE, type Project, type Transform } from "../project/model";
+import { stabilization } from "../vision/stabilize";
 import { clipAt, transitionAt } from "../project/query";
 import { clipEnd, rateAt, sourceTimeAt } from "../project/timing";
 import type { Micros } from "../time";
@@ -44,8 +45,8 @@ export class FrameRenderer {
         if (transition && definition) {
           const { from, to } = transition;
           // Each side holds its edge frame while the other is on screen.
-          const fromLayer = await this.layerFor(from, files, Math.min(time, clipEnd(from) - 1), opened);
-          const toLayer = await this.layerFor(to, files, Math.max(time, to.start), opened);
+          const fromLayer = await this.layerFor(project, from, files, Math.min(time, clipEnd(from) - 1), opened);
+          const toLayer = await this.layerFor(project, to, files, Math.max(time, to.start), opened);
           if (index === 0) mainPicture = (time < to.start ? fromLayer : toLayer)?.picture ?? null;
           if (fromLayer && toLayer) items.push({ kind: "transition", from: fromLayer, to: toLayer, definition, progress: transition.progress });
           else if (fromLayer ?? toLayer) items.push((fromLayer ?? toLayer)!);
@@ -54,7 +55,7 @@ export class FrameRenderer {
 
         const clip = clipAt(track, time);
         if (!clip) continue;
-        const layer = await this.layerFor(clip, files, time, opened);
+        const layer = await this.layerFor(project, clip, files, time, opened);
         if (!layer) continue;
         if (index === 0) mainPicture = layer.picture;
         items.push(layer);
@@ -98,7 +99,7 @@ export class FrameRenderer {
     await Promise.all(cursors.map((cursor) => cursor.close()));
   }
 
-  private async layerFor(clip: Clip, files: MediaFiles, time: Micros, opened: VideoFrame[]): Promise<Layer | null> {
+  private async layerFor(project: Project, clip: Clip, files: MediaFiles, time: Micros, opened: VideoFrame[]): Promise<Layer | null> {
     const look = animatedLook(clip, time);
     let picture: Picture | null = null;
     if (clip.text) {
@@ -109,12 +110,13 @@ export class FrameRenderer {
     }
     if (!picture) return null;
 
+    const transform = this.stabilized(project, clip, look.transform, picture, time);
     const geometry = layerGeometry({
       displayWidth: picture.displayWidth,
       displayHeight: picture.displayHeight,
       rotation: picture.rotation,
       flip: picture.flip,
-      transform: look.transform,
+      transform,
       crop: clip.crop,
       canvasWidth: this.compositor.width,
       canvasHeight: this.compositor.height,
@@ -129,6 +131,27 @@ export class FrameRenderer {
       processing: this.processingFor(clip, files, time),
       mask: clip.mask ?? null,
       blend: clip.blend ?? "normal",
+    };
+  }
+
+  /**
+   * Moves the picture against the camera's measured shake, zoomed in just
+   * enough that the frame's moving edges never show.
+   */
+  private stabilized(project: Project, clip: Clip, transform: Transform, picture: Picture, time: Micros): Transform {
+    const motion = project.assets[clip.assetId]?.motion;
+    if (!motion || !clip.stabilize || clip.freezeAt !== undefined) return transform;
+    const steady = stabilization(motion, clip.stabilize.strength);
+    const correction = steady.at(sourceTimeAt(clip, time));
+    const { width, height } = this.compositor;
+    const fit = Math.min(width / picture.displayWidth, height / picture.displayHeight);
+    const scale = transform.scale * steady.zoom;
+    return {
+      ...transform,
+      x: transform.x + (correction.x * picture.displayWidth * fit * scale) / width,
+      y: transform.y + (correction.y * picture.displayHeight * fit * scale) / height,
+      rotation: transform.rotation + (correction.angle * 180) / Math.PI,
+      scale: scale * correction.scale,
     };
   }
 

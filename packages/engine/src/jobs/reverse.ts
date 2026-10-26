@@ -19,10 +19,7 @@ import {
   VideoSampleSource,
 } from "mediabunny";
 import { type Micros, microsToSeconds } from "../time";
-
-export class ReverseCancelledError extends Error {
-  override name = "ReverseCancelledError";
-}
+import { throwIfCancelled } from "./cancel";
 
 export interface ReverseOptions {
   /** The part of the file to reverse, in its own time. */
@@ -72,7 +69,7 @@ export async function reverseMedia(file: Blob, options: ReverseOptions): Promise
     /** Runs `work` on each chunk from the end backwards, stopping if cancelled. */
     const eachChunk = async (work: (chunkStart: Micros, chunkEnd: Micros) => Promise<void>, reports: boolean) => {
       for (let chunkEnd = end; chunkEnd > start; chunkEnd -= CHUNK) {
-        if (signal?.aborted) throw new ReverseCancelledError("Reversing was cancelled.");
+        throwIfCancelled(signal, "Reversing was cancelled.");
         const chunkStart = Math.max(start, chunkEnd - CHUNK);
         await work(chunkStart, chunkEnd);
         if (reports) onProgress?.((end - chunkStart) / (end - start));

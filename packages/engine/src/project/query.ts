@@ -88,6 +88,12 @@ export function isStill(project: Project, clip: Clip): boolean {
   return clip.freezeAt !== undefined || kind === "image" || kind === "text";
 }
 
+/** Whether the clip's asset has camera motion measured over all the footage the clip shows. */
+export function motionCovers(project: Project, clip: Clip): boolean {
+  const motion = assetOf(project, clip).motion;
+  return !!motion && motion.start <= clip.sourceIn && motion.end >= clip.sourceOut;
+}
+
 /** Whether the clip plays its media backwards. */
 export function isReversed(project: Project, clip: Clip): boolean {
   return assetOf(project, clip).reverseOf !== undefined;

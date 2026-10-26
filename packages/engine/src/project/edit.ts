@@ -412,6 +412,17 @@ function backwards(easing: Easing): Easing {
   return easing;
 }
 
+/**
+ * Steadies a clip with the given strength (0 to 1), or stops with null.
+ * Its asset needs camera motion measured over the clip, which `motionCovers` checks.
+ */
+export function setStabilize(project: Project, clipId: Id, strength: number | null): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked || isStill(project, found.clip)) return project;
+  const stabilize = strength === null ? undefined : { strength: clamp(strength, 0, 1) };
+  return replaceClip(project, found.trackIndex, { ...found.clip, stabilize });
+}
+
 /** Turns frame blending on or off, for smoother slow motion. */
 export function setFrameBlending(project: Project, clipId: Id, on: boolean): Project {
   const found = locateClip(project, clipId);
