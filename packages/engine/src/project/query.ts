@@ -88,6 +88,18 @@ export function isStill(project: Project, clip: Clip): boolean {
   return clip.freezeAt !== undefined || kind === "image" || kind === "text";
 }
 
+/** Whether the clip plays its media backwards. */
+export function isReversed(project: Project, clip: Clip): boolean {
+  return assetOf(project, clip).reverseOf !== undefined;
+}
+
+/** A reversed copy of the clip's media that already covers its range, if one was made before. */
+export function reversedCopyFor(project: Project, clip: Clip): Asset | undefined {
+  return Object.values(project.assets).find(
+    ({ reverseOf }) => reverseOf?.assetId === clip.assetId && reverseOf.start <= clip.sourceIn && reverseOf.end >= clip.sourceOut,
+  );
+}
+
 /** Whether the clip makes sound: a video or audio clip that isn't silenced or frozen. */
 export function isAudible(project: Project, clip: Clip): boolean {
   return !isSilent(clip) && !isStill(project, clip) && assetOf(project, clip).audio !== undefined;

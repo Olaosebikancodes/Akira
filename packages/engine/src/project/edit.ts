@@ -354,6 +354,64 @@ export function setSpeedCurve(project: Project, clipId: Id, points: readonly Spe
   return retime(project, found, { ...found.clip, speedCurve: curve });
 }
 
+/**
+ * Plays a clip backwards from `reversedAssetId`, a reversed copy of its
+ * media that covers its range. Its position, length and look stay the same;
+ * keyframes and speed points move to the same moments of footage.
+ */
+export function reverseClip(project: Project, clipId: Id, reversedAssetId: Id): Project {
+  const found = locateClip(project, clipId);
+  const copy = project.assets[reversedAssetId]?.reverseOf;
+  if (!found || found.track.locked || !copy || copy.assetId !== found.clip.assetId) return project;
+  const { clip, trackIndex } = found;
+  if (clip.sourceIn < copy.start || clip.sourceOut > copy.end) return project;
+  return replaceClip(project, trackIndex, mirrorClip(clip, reversedAssetId, copy.end));
+}
+
+/** Plays a reversed clip forwards again, from its original media. */
+export function unreverseClip(project: Project, clipId: Id): Project {
+  const found = locateClip(project, clipId);
+  if (!found || found.track.locked) return project;
+  const copy = assetOf(project, found.clip).reverseOf;
+  if (!copy) return project;
+  return replaceClip(project, found.trackIndex, mirrorClip(found.clip, copy.assetId, copy.end));
+}
+
+/** Maps a clip onto media that runs the other way, where time t becomes `end - t`. */
+function mirrorClip(clip: Clip, assetId: Id, end: Micros): Clip {
+  const flip = (time: Micros) => end - time;
+  const keyframes = clip.keyframes
+    ? Object.fromEntries(Object.entries(clip.keyframes).map(([property, list]) => [property, mirrorKeyframes(list, flip)]))
+    : undefined;
+  return {
+    ...clip,
+    assetId,
+    sourceIn: flip(clip.sourceOut),
+    sourceOut: flip(clip.sourceIn),
+    keyframes,
+    speedCurve: clip.speedCurve?.map((point) => ({ ...point, time: flip(point.time) })).reverse(),
+  };
+}
+
+/**
+ * Each keyframe's easing describes the way to the next; reversed, it belongs
+ * to the one now before it. The last keyframe's unused easing moves to the
+ * new last one, so reversing twice gives back exactly what was there.
+ */
+function mirrorKeyframes(list: readonly Keyframe[], flip: (time: Micros) => Micros): Keyframe[] {
+  const reversed = [...list].reverse();
+  return reversed.map((keyframe, i) => {
+    const towards = reversed[i + 1] ?? reversed[0]!;
+    return { time: flip(keyframe.time), value: keyframe.value, easing: backwards(towards.easing) };
+  });
+}
+
+function backwards(easing: Easing): Easing {
+  if (easing === "ease-in") return "ease-out";
+  if (easing === "ease-out") return "ease-in";
+  return easing;
+}
+
 /** Turns frame blending on or off, for smoother slow motion. */
 export function setFrameBlending(project: Project, clipId: Id, on: boolean): Project {
   const found = locateClip(project, clipId);

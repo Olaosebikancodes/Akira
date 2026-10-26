@@ -21,7 +21,7 @@ export class VideoFrameCursor {
   private current: VideoSample | null = null;
   private upcoming: VideoSample | null = null;
 
-  constructor(private readonly sink: VideoSampleSink) {}
+  constructor(readonly sink: VideoSampleSink) {}
 
   async frameAt(time: Micros): Promise<VideoSample | null> {
     if (this.needsRestart(time)) await this.restart(time);

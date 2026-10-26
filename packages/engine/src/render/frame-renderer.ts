@@ -263,6 +263,11 @@ export class FrameRenderer {
 
   private cursorFor(clip: Clip, sink: NonNullable<MediaFile["video"]>): VideoFrameCursor {
     let cursor = this.cursors.get(clip.id);
+    // A clip keeps its id when its media changes (reversed, or replaced), so check the media too.
+    if (cursor && cursor.sink !== sink) {
+      void cursor.close();
+      cursor = undefined;
+    }
     if (!cursor) {
       cursor = new VideoFrameCursor(sink);
       this.cursors.set(clip.id, cursor);

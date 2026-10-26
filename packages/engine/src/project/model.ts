@@ -76,6 +76,15 @@ export interface Asset {
   lut?: {
     size: number;
   };
+  /**
+   * Set on a reversed copy of part of another asset, made in the
+   * background. Time t in this asset is time `end - t` in that one.
+   */
+  reverseOf?: {
+    assetId: Id;
+    start: Micros;
+    end: Micros;
+  };
 }
 
 export const TEXT_ASSET_ID = "text";

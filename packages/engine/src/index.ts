@@ -37,4 +37,6 @@ export { exportProjectZip, importProjectZip } from "./storage/project-zip";
 export { ZipError } from "./storage/zip";
 export * from "./time";
 export { exportInWorker, serveExportWorker } from "./worker/export-worker";
+export { ReverseCancelledError, reverseMedia } from "./jobs/reverse";
+export { reverseInWorker, serveReverseWorker } from "./worker/reverse-worker";
 export { serveRenderWorker, type WorkerScope } from "./worker/render-worker";
