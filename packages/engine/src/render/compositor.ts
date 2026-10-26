@@ -94,6 +94,13 @@ export type BackgroundFill =
   /** A picture scaled to cover the canvas and blurred; `amount` runs 0 to 1. */
   | { kind: "blur"; picture: Picture; amount: number };
 
+/** Clean-up run over whole finished frames, each 0 to 1. */
+export interface FinishOptions {
+  denoise: number;
+  deband: number;
+  sharpen: number;
+}
+
 export interface CompositorOptions {
   /**
    * Keep the last frame readable after drawing. Export needs this so the
@@ -181,6 +188,8 @@ export class Compositor {
   private readonly luts = new Map<string, WebGLTexture>();
   private readonly pool: TargetPool;
   private frame: Target | null = null;
+  /** Run on every finished frame before it's shown, e.g. for an export preset. */
+  finish: FinishOptions | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement | OffscreenCanvas,
@@ -236,11 +245,12 @@ export class Compositor {
       else this.drawLayer(item, frame);
     }
 
+    const finished = this.finish ? this.finishFrame(frame, this.finish) : frame.texture;
     // Copy the finished frame to the canvas, flipping it the right way up.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
     gl.disable(gl.BLEND);
-    this.drawTexture(frame.texture, fullTarget(this.width, this.height), IDENTITY, this.width, this.height, -1);
+    this.drawTexture(finished, fullTarget(this.width, this.height), IDENTITY, this.width, this.height, -1);
     gl.bindVertexArray(null);
     this.pool.releaseAll();
   }
@@ -465,6 +475,29 @@ export class Compositor {
     // The result is upright, so only the crop is left to apply.
     const cropOnly = new Float32Array([visibleWidth, 0, 0, 0, visibleHeight, 0, crop.left, crop.top, 1]);
     return { texture: current.texture, matrix: cropOnly };
+  }
+
+  /** Denoises, debands and sharpens a whole finished frame, returning the result's texture. */
+  private finishFrame(frame: Target, finish: FinishOptions): WebGLTexture {
+    const { gl } = this;
+    const { width, height } = frame;
+    let current = frame;
+    gl.disable(gl.BLEND);
+    const pass = (name: ProgramName, setup: (program: Program) => void) => {
+      const next = this.pool.acquire(width, height);
+      this.bindTarget(next);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, current.texture);
+      const program = this.program(name).use().int("u_image", 0);
+      setGeometry(program, fullTarget(width, height), IDENTITY, width, height, 1);
+      setup(program);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      current = next;
+    };
+    if (finish.denoise > 0) pass("denoise", (p) => p.vec2("u_texel", 1 / width, 1 / height).float("u_strength", finish.denoise));
+    if (finish.deband > 0) pass("deband", (p) => p.vec2("u_texel", 1 / width, 1 / height).float("u_strength", finish.deband));
+    if (finish.sharpen > 0) pass("rcas", (p) => p.float("u_sharpness", sharpness(finish.sharpen)).vec2("u_size", width, height));
+    return current.texture;
   }
 
   private bindLut(grade: Grade): void {

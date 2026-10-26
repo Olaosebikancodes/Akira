@@ -2,7 +2,7 @@ export { MIX_SAMPLE_RATE, renderAudioMix } from "./audio/mix";
 export { clipGainAt } from "./audio/envelope";
 export { audioBufferToPcm, type PcmAudio } from "./audio/pcm";
 export { computeWaveform, peakBetween, WAVEFORM_RATE, type Waveform } from "./audio/waveform";
-export { type ExportOptions, ExportCancelledError, exportProject } from "./export/export";
+export { type ExportFormat, type ExportOptions, ExportCancelledError, exportProject } from "./export/export";
 export {
   isLutFile,
   type MediaFiles,
@@ -26,7 +26,15 @@ export * from "./project/snap";
 export * from "./project/timing";
 export { animatedLook } from "./render/animation";
 export { analyzeColor, type ColorCorrection } from "./render/auto-color";
-export { type BackgroundFill, Compositor, type Layer, type Picture, type RenderItem, type TransitionLayer } from "./render/compositor";
+export {
+  type BackgroundFill,
+  Compositor,
+  type FinishOptions,
+  type Layer,
+  type Picture,
+  type RenderItem,
+  type TransitionLayer,
+} from "./render/compositor";
 export { BUILT_IN_FONTS, ensureFont, fontShorthand, isFontFile, setFontBaseUrl } from "./render/fonts";
 export { coverScale, type LayerGeometry, layerGeometry, type Point, pointInQuad } from "./render/geometry";
 export { gradeColor } from "./render/grade";

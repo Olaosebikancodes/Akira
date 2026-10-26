@@ -2,7 +2,8 @@ import type { QualityLevel } from "mediabunny";
 import { renderAudioMix } from "../audio/mix";
 import { type PcmAudio, pcmTransferables } from "../audio/pcm";
 import { audibleClips } from "../audio/schedule";
-import { ExportCancelledError, type ExportOptions, exportProject } from "../export/export";
+import { ExportCancelledError, type ExportFormat, type ExportOptions, exportProject } from "../export/export";
+import type { FinishOptions } from "../render/compositor";
 import { MediaFile, type MediaFiles } from "../media/media-file";
 import type { Id, Project } from "../project/model";
 import { setFontBaseUrl } from "../render/fonts";
@@ -16,6 +17,11 @@ export type ExportRequest =
       files: { assetId: Id; file: File }[];
       audio: PcmAudio | null;
       quality?: QualityLevel;
+      format?: ExportFormat;
+      width?: number;
+      height?: number;
+      videoBitrate?: number;
+      finish?: FinishOptions;
       /** Absolute URL the built-in fonts are served from, ending in "/". */
       fontBaseUrl: string;
     }
@@ -47,6 +53,11 @@ export function serveExportWorker(scope: WorkerScope): void {
         const blob = await exportProject(message.project, files, {
           audio: message.audio,
           quality: message.quality,
+          format: message.format,
+          width: message.width,
+          height: message.height,
+          videoBitrate: message.videoBitrate,
+          finish: message.finish,
           signal,
           onProgress: (progress) => post({ type: "progress", progress }),
         });
@@ -111,6 +122,11 @@ export async function exportInWorker(
       files: sources,
       audio,
       quality: options.quality,
+      format: options.format,
+      width: options.width,
+      height: options.height,
+      videoBitrate: options.videoBitrate,
+      finish: options.finish,
       fontBaseUrl: options.fontBaseUrl,
     };
     worker.postMessage(request, audio ? pcmTransferables(audio) : []);
