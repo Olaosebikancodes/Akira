@@ -1,16 +1,20 @@
 "use client";
 
 import { ExportCancelledError, exportInWorker, projectDuration } from "@akira/engine";
-import { CheckIcon, DownloadSimpleIcon, ExportIcon, SquaresFourIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
+import { CheckIcon, DownloadSimpleIcon, ExportIcon, QuestionIcon, SquaresFourIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useState } from "react";
-import { fontBaseUrl, notify, type SaveState, setProjectName, useEditor } from "./store";
-import { Button, focusRing } from "./ui";
+import { ExportPanel, UploadTips } from "./export-panel";
+import { DEFAULT_EXPORT, type ExportSettings, exportSize, TIKTOK_FINISH, tiktokBitrate } from "./export-settings";
+import { fontBaseUrl, notify, openTour, type SaveState, setProjectName, useEditor } from "./store";
+import { Button, focusRing, IconButton } from "./ui";
 
 type ExportState =
   | { kind: "idle" }
   | { kind: "running"; progress: number; controller: AbortController }
-  | { kind: "done"; url: string; name: string; size: number };
+  | { kind: "done"; url: string; name: string; size: number; format: string; tiktok: boolean };
+
+const QUALITY = { smaller: "medium", balanced: "high", best: "very-high" } as const;
 
 const SAVE_LABELS: Record<SaveState, string> = {
   new: "",
@@ -35,10 +39,16 @@ export function TopBar() {
   const name = useEditor((s) => s.project.name);
   const hasContent = useEditor((s) => projectDuration(s.project) > 0);
   const [exporting, setExporting] = useState<ExportState>({ kind: "idle" });
+  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_EXPORT);
+  const [panel, setPanel] = useState<"settings" | "tips" | null>(null);
 
   async function runExport() {
+    setPanel(null);
     const { project, files, player } = useEditor.getState();
     player?.pause();
+    const tiktok = settings.preset === "tiktok";
+    const format = tiktok ? "mp4" : settings.format;
+    const size = exportSize(project, tiktok ? 1080 : Number(settings.resolution));
     const controller = new AbortController();
     setExporting({ kind: "running", progress: 0, controller });
     // Exporting in a worker keeps the editor responsive during long renders.
@@ -48,8 +58,15 @@ export function TopBar() {
         signal: controller.signal,
         onProgress: (progress) => setExporting({ kind: "running", progress, controller }),
         fontBaseUrl: fontBaseUrl(),
+        format,
+        ...size,
+        ...(tiktok
+          ? { videoBitrate: tiktokBitrate(projectDuration(project)), finish: TIKTOK_FINISH }
+          : { quality: QUALITY[settings.quality] }),
       });
-      setExporting({ kind: "done", url: URL.createObjectURL(blob), name: `${project.name || "Akira"}.mp4`, size: blob.size });
+      const name = `${project.name || "Akira"}${tiktok ? " (TikTok)" : ""}.${format}`;
+      setExporting({ kind: "done", url: URL.createObjectURL(blob), name, size: blob.size, format: format === "webm" ? "WebM" : "MP4", tiktok });
+      if (tiktok) setPanel("tips");
     } catch (error) {
       setExporting({ kind: "idle" });
       if (!(error instanceof ExportCancelledError)) {
@@ -93,7 +110,8 @@ export function TopBar() {
         <SaveStatus />
       </div>
 
-      <div className="flex items-center gap-2" aria-live="polite">
+      <div data-tour="export" className="relative flex items-center gap-2" aria-live="polite">
+        <IconButton icon={QuestionIcon} label="Take the tour" onClick={openTour} />
         {exporting.kind === "running" && (
           <>
             <progress value={exporting.progress} max={1} aria-label="Export progress" className="h-1.5 w-32 accent-accent" />
@@ -110,7 +128,7 @@ export function TopBar() {
               className={`press inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-foreground hover:bg-accent-hover ${focusRing}`}
             >
               <DownloadSimpleIcon size={15} aria-hidden />
-              Download MP4
+              Download {exporting.format}
             </a>
             <button type="button" aria-label="Dismiss export" onClick={dismiss} className={`press grid size-8 place-items-center rounded-md text-muted hover:bg-raised ${focusRing}`}>
               <XIcon size={15} aria-hidden />
@@ -118,11 +136,15 @@ export function TopBar() {
           </>
         )}
         {exporting.kind === "idle" && (
-          <Button variant="primary" onClick={() => void runExport()} disabled={!hasContent}>
+          <Button variant="primary" onClick={() => setPanel(panel === "settings" ? null : "settings")} disabled={!hasContent}>
             <ExportIcon size={15} aria-hidden />
             Export
           </Button>
         )}
+        {panel === "settings" && exporting.kind === "idle" && (
+          <ExportPanel settings={settings} onChange={setSettings} onExport={() => void runExport()} onClose={() => setPanel(null)} />
+        )}
+        {panel === "tips" && exporting.kind === "done" && <UploadTips onClose={() => setPanel(null)} />}
       </div>
     </header>
   );

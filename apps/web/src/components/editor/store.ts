@@ -96,6 +96,10 @@ interface EditorState {
   jobs: Job[];
   /** Set while the user draws a box on the canvas around something for a clip to follow. */
   trackingSetup: { followerId: Id; followScale: boolean } | null;
+  /** Shows where TikTok's buttons and caption cover the video. */
+  safeZones: boolean;
+  /** The guided tour for first-timers. */
+  tourOpen: boolean;
 }
 
 function blankProject(): Project {
@@ -136,6 +140,8 @@ export const useEditor = create<EditorState>(() => ({
   opening: false,
   jobs: [],
   trackingSetup: null,
+  safeZones: false,
+  tourOpen: false,
 }));
 
 const set = useEditor.setState;
@@ -298,6 +304,36 @@ export function updateAsset(assetId: Id, change: Partial<Asset>): void {
     future: future.map(withChange),
     gestureStart: gestureStart && withChange(gestureStart),
   });
+}
+
+/** Remembered in this browser only; the tour is a convenience, so storage failing just means it shows again. */
+const TOUR_KEY = "akira.tour";
+
+/** Opens the tour the first time someone uses the editor in this browser. */
+export function openTourIfNew(): void {
+  try {
+    if (localStorage.getItem(TOUR_KEY) === "seen") return;
+  } catch {
+    return;
+  }
+  set({ tourOpen: true });
+}
+
+export function openTour(): void {
+  set({ tourOpen: true });
+}
+
+export function closeTour(): void {
+  set({ tourOpen: false });
+  try {
+    localStorage.setItem(TOUR_KEY, "seen");
+  } catch {
+    // Private windows can refuse storage; the tour just shows again next time.
+  }
+}
+
+export function setSafeZones(safeZones: boolean): void {
+  set({ safeZones });
 }
 
 export function setTrackingSetup(trackingSetup: EditorState["trackingSetup"]): void {

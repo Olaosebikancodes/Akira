@@ -3,6 +3,7 @@
 import { formatTimecode, Player, projectDuration } from "@akira/engine";
 import {
   CaretLeftIcon,
+  DeviceMobileIcon,
   CaretRightIcon,
   PauseIcon,
   PlayIcon,
@@ -12,8 +13,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { seekToEdit, stepFrames } from "./actions";
 import { CanvasOverlay } from "./canvas-overlay";
+import { SafeZones } from "./safe-zones";
 import { TrackingOverlay } from "./tracking-overlay";
-import { fontBaseUrl, notify, togglePlayback, useEditor } from "./store";
+import { fontBaseUrl, notify, setSafeZones, togglePlayback, useEditor } from "./store";
 import { IconButton } from "./ui";
 
 /** The canvas the project plays in, its on-canvas handles and the transport bar. */
@@ -25,6 +27,7 @@ export function Preview() {
   const files = useEditor((s) => s.files);
   const empty = project.tracks.every((track) => track.clips.length === 0);
   const tracking = useEditor((s) => s.trackingSetup !== null);
+  const safeZones = useEditor((s) => s.safeZones);
 
   useEffect(() => {
     // A canvas can be handed to a worker only once, so every mount makes a fresh one.
@@ -73,6 +76,7 @@ export function Preview() {
     <section aria-label="Preview" className="flex min-h-0 min-w-0 flex-col bg-stage">
       <div ref={stageRef} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
         <div ref={hostRef} className="relative" style={{ width: Math.floor(width * scale), height: Math.floor(height * scale) }}>
+          {safeZones && <SafeZones />}
           {!empty && scale > 0 && (tracking ? <TrackingOverlay /> : <CanvasOverlay scale={scale} />)}
         </div>
         {empty && (
@@ -110,9 +114,16 @@ function Transport() {
         <IconButton icon={CaretRightIcon} label="Next frame" shortcut="→" onClick={() => stepFrames(1)} disabled={disabled} />
         <IconButton icon={SkipForwardIcon} label="Next edit" shortcut="↓" onClick={() => seekToEdit(1)} disabled={disabled} />
       </div>
-      <div className="w-44" />
+      <div className="flex w-44 justify-end">
+        <SafeZonesToggle />
+      </div>
     </div>
   );
+}
+
+function SafeZonesToggle() {
+  const on = useEditor((s) => s.safeZones);
+  return <IconButton icon={DeviceMobileIcon} label="TikTok safe zones" onClick={() => setSafeZones(!on)} active={on} />;
 }
 
 /** Re-renders on every frame of playback, so it's kept apart from everything else. */

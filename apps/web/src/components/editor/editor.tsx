@@ -25,6 +25,7 @@ import {
   dismissNotice,
   fontBaseUrl,
   notify,
+  openTourIfNew,
   redo,
   resetEditor,
   seek,
@@ -38,14 +39,18 @@ import {
 } from "./store";
 import { Timeline } from "./timeline/timeline";
 import { TopBar } from "./top-bar";
+import { Tour } from "./tour";
 import { focusRing } from "./ui";
 
 export function Editor() {
   // The page measures text for the on-canvas handles, so it needs the fonts too.
   useEffect(() => setFontBaseUrl(fontBaseUrl()), []);
   const opening = useOpenProject();
+  const touring = useEditor((s) => s.tourOpen);
   useKeyboardShortcuts();
   useUnsavedWarning();
+  // First-timers get a short tour of the editor; Help replays it.
+  useEffect(() => openTourIfNew(), []);
 
   return (
     <>
@@ -70,6 +75,7 @@ export function Editor() {
       </main>
       <SmallScreen />
       <Notices />
+      {touring && <Tour />}
     </>
   );
 }
