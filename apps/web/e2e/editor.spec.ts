@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { audioLevels, DIRTY, ensureFixtures, FIXTURES } from "./fixtures";
+import { audioLevels, DIRTY, ensureFixtures, FIXTURES, videoInfo } from "./fixtures";
 
 type Colour = "red" | "green" | "blue" | "black" | "other";
 
@@ -11,6 +11,10 @@ test.beforeAll(async ({ browser }) => {
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  // The first-run tour would cover the editor, so tests start as returning users unless one asks otherwise.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("akira.test.tour")) localStorage.setItem("akira.tour", "seen");
+  });
   await page.goto("/editor");
   // The preview canvas is created once React has taken over the page. (Waiting
   // for network idle doesn't work: the dev server's worker loader stays connected.)
@@ -120,6 +124,7 @@ async function addAgain(page: Page, name: string) {
 async function exportVideo(page: Page, name = "export.mp4"): Promise<string> {
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Export video" }).click();
   await page.getByRole("link", { name: "Download MP4" }).click({ timeout: 60_000 });
   const file = test.info().outputPath(name);
   await (await downloadPromise).saveAs(file);
@@ -993,6 +998,7 @@ test("exports, and the export re-imports with the edited length", async ({ page 
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Export video" }).click();
   await page.getByRole("link", { name: "Download MP4" }).click({ timeout: 60_000 });
   const exported = test.info().outputPath("export.mp4");
   await (await downloadPromise).saveAs(exported);
@@ -1009,6 +1015,7 @@ test("exports, and the export re-imports with the edited length", async ({ page 
 test("can cancel an export", async ({ page }) => {
   await addClip(page, FIXTURES.long);
   await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Export video" }).click();
   await page.getByRole("button", { name: "Cancel export" }).click();
   await expect(page.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
   await expect(page.getByRole("link", { name: "Download MP4" })).toHaveCount(0);
@@ -1018,4 +1025,81 @@ test("can cancel an export", async ({ page }) => {
 test("explains when a file isn't media", async ({ page }) => {
   await importMedia(page, FIXTURES.notMedia);
   await expect(errorNotice(page)).toContainText("isn't a video or audio format");
+});
+
+// Export settings, TikTok, the tour and the site
+
+test("exports WebM at 720p", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Format" }).getByRole("radio", { name: "WebM (VP9)" }).click();
+  await page.getByRole("radiogroup", { name: "Resolution" }).getByRole("radio", { name: "720p" }).click();
+  await expect(page.getByRole("dialog", { name: "Export settings" })).toContainText("1280 × 720");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export video" }).click();
+  await page.getByRole("link", { name: "Download WebM" }).click({ timeout: 60_000 });
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Untitled project.webm");
+  const file = test.info().outputPath("export.webm");
+  await download.saveAs(file);
+  expect(await videoInfo(page, file)).toEqual({ width: 1280, height: 720, codec: "vp9" });
+});
+
+test("exports for TikTok, with safe zones and upload tips", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.keyboard.press("Escape");
+  await page.getByRole("radio", { name: "9:16" }).click();
+  await page.getByRole("button", { name: "TikTok safe zones" }).click();
+  await expect(page.locator("[data-safe-zones]")).toBeVisible();
+
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Export preset" }).getByRole("radio", { name: "TikTok" }).click();
+  await expect(page.getByRole("dialog", { name: "Export settings" })).toContainText("1080 × 1920");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export video" }).click();
+  await expect(page.getByRole("dialog", { name: "Upload tips" })).toContainText("Upload HD", { timeout: 60_000 });
+  await page.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("link", { name: "Download MP4" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Untitled project (TikTok).mp4");
+  const file = test.info().outputPath("tiktok.mp4");
+  await download.saveAs(file);
+  expect(await videoInfo(page, file)).toEqual({ width: 1080, height: 1920, codec: "avc" });
+});
+
+test("shows first-timers a tour, once, and replays it from Help", async ({ page }) => {
+  await page.evaluate(() => {
+    sessionStorage.setItem("akira.test.tour", "1");
+    localStorage.removeItem("akira.tour");
+  });
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "Welcome to Akira" })).toBeVisible();
+  await page.getByRole("button", { name: "Show me around" }).click();
+  const titles = ["Bring in your media", "Arrange it on the timeline", "Watch and place things", "Fine-tune what's selected", "Export when you're done"];
+  for (const title of titles) {
+    await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+    await page.getByRole("dialog", { name: title }).getByRole("button", { name: "Next", exact: true }).click();
+  }
+  await expect(page.getByRole("dialog", { name: "Your work saves itself" })).toBeVisible();
+  await page.getByRole("button", { name: "Start editing" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.reload();
+  await page.getByLabel("Video preview").waitFor();
+  await expect(page.getByRole("dialog", { name: "Welcome to Akira" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Take the tour" }).click();
+  await expect(page.getByRole("dialog", { name: "Welcome to Akira" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Welcome to Akira" })).toHaveCount(0);
+});
+
+test("the home page and docs lead into the editor", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("A real video editor. Nothing leaves your computer.");
+  await page.getByRole("link", { name: "Read the docs" }).click();
+  await expect(page).toHaveURL(/\/docs$/);
+  await expect(page.getByRole("heading", { name: "Keyboard shortcuts" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Split at the playhead" })).toBeVisible();
+  await page.getByRole("link", { name: "Open Akira" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
 });

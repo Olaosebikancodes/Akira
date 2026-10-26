@@ -142,6 +142,23 @@ export async function audioLevels(page: Page, file: string, windows: readonly (r
   );
 }
 
+/** A file's video size and codec, read in the page as a player would. */
+export async function videoInfo(page: Page, file: string): Promise<{ width: number; height: number; codec: string | null }> {
+  return page.evaluate(
+    async ({ bundle, base64 }) => {
+      const url = URL.createObjectURL(new Blob([bundle], { type: "text/javascript" }));
+      const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
+      const mb = (await importModule(url)) as typeof import("mediabunny");
+      URL.revokeObjectURL(url);
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const input = new mb.Input({ source: new mb.BufferSource(bytes.buffer), formats: mb.ALL_FORMATS });
+      const track = (await input.getPrimaryVideoTrack())!;
+      return { width: await track.getDisplayWidth(), height: await track.getDisplayHeight(), codec: await track.getCodec() };
+    },
+    { bundle: mediabunnyBundle(), base64: readFileSync(file).toString("base64") },
+  );
+}
+
 /** Red becomes blue and blue becomes red: easy to see, and only a lookup table would do it. */
 function swapLut(): string {
   const lines = ['TITLE "Swap red and blue"', "LUT_3D_SIZE 2"];
