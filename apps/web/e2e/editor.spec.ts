@@ -720,6 +720,79 @@ test("fades a video clip in with an in animation", async ({ page }) => {
   await expect.poll(() => colourAt(page)).toBe("green");
 });
 
+// Speed curves and reverse
+
+/** The timeline's length in seconds, read from the duration timecode at 30 fps. */
+async function durationSeconds(page: Page): Promise<number> {
+  const [hours, minutes, seconds, frames] = (await duration(page).textContent())!.split(":").map(Number);
+  return hours! * 3600 + minutes! * 60 + seconds! + frames! / 30;
+}
+
+test("ramps speed with a curve preset, and goes back to normal", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("radiogroup", { name: "Speed mode" }).getByRole("radio", { name: "Curve" }).click();
+  await expect(duration(page)).toHaveText("00:00:03:00");
+  // Hero slows to a fifth of normal speed in the middle, so the clip lasts longer.
+  await page.getByRole("button", { name: "Hero" }).click();
+  await expect.poll(() => durationSeconds(page)).toBeGreaterThan(3.5);
+  await page.getByRole("radiogroup", { name: "Speed mode" }).getByRole("radio", { name: "Normal" }).click();
+  await expect(duration(page)).toHaveText("00:00:03:00");
+});
+
+test("shapes a speed curve from the keyboard", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("radiogroup", { name: "Speed mode" }).getByRole("radio", { name: "Curve" }).click();
+  const middle = page.getByRole("slider", { name: "Speed point 2 of 3" });
+  await middle.focus();
+  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowUp");
+  await expect(middle).toHaveAttribute("aria-valuetext", "2.14×");
+  await expect.poll(() => durationSeconds(page)).toBeLessThan(2.5);
+  // Arrows on a point change its speed, not the playhead.
+  await expect(currentTime(page)).toHaveText("00:00:00:00");
+});
+
+test("blends frames for smooth slow motion", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await setNumber(page, "Speed", 0.25);
+  await expect(duration(page)).toHaveText("00:00:12:00");
+  // Frame 118 shows footage half-way between the last red frame and the first green one.
+  await goToFrame(page, 118);
+  await expect.poll(() => colourAt(page)).toBe("red");
+  await page.getByLabel("Smooth slow motion").check();
+  await page.getByLabel("Smooth slow motion").blur();
+  await expect
+    .poll(async () => {
+      const [r, g, b] = await rgbAt(page);
+      return r > 80 && g > 80 && b < 60;
+    })
+    .toBe(true);
+});
+
+test("reverses a clip in the background, and plays it forwards again", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("button", { name: "Reverse", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Play forwards" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("button", { name: /^colors\.mp4,/ }).getByLabel("Reversed")).toBeVisible();
+  await expect(duration(page)).toHaveText("00:00:03:00");
+  // Blue comes first now, red last.
+  await goToFrame(page, 15);
+  await expect.poll(() => colourAt(page)).toBe("blue");
+  await goToFrame(page, 75);
+  await expect.poll(() => colourAt(page)).toBe("red");
+  // The reversed copy is Akira's own, so it isn't listed with the media.
+  await expect(page.getByText("1 file", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Play forwards" }).click();
+  await expect.poll(() => colourAt(page)).toBe("blue");
+  await goToFrame(page, 15);
+  await expect.poll(() => colourAt(page)).toBe("red");
+  // Reversing again reuses the copy, with no wait.
+  await page.getByRole("button", { name: "Reverse", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Play forwards" })).toBeVisible();
+  await expect.poll(() => colourAt(page)).toBe("blue");
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
 // Saving
 
 function saved(page: Page): Locator {
