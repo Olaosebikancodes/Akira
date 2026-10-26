@@ -77,6 +77,16 @@ body {
   }
 }
 
+/* The landing page's playhead crossing its timeline drawing. */
+@keyframes sweep {
+  from {
+    left: 2%;
+  }
+  to {
+    left: 98%;
+  }
+}
+
 /* Pressable controls dip slightly, so a click feels received. */
 .press {
   transition: transform 140ms var(--ease-out), background-color 140ms ease, color 140ms ease;
