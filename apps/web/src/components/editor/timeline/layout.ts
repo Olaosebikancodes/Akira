@@ -1,6 +1,8 @@
 import type { Id, Micros, Project, Track } from "@akira/engine";
 
 export const HEADER_WIDTH = 164;
+/** On phones the track header keeps one toggle and no name. */
+export const COMPACT_HEADER_WIDTH = 40;
 export const RULER_HEIGHT = 28;
 /** Breathing room after the last clip, so there's always somewhere to drop. */
 export const TAIL_SECONDS = 30;

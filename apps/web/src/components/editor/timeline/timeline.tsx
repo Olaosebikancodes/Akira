@@ -16,12 +16,14 @@ import {
   trimClip,
 } from "@akira/engine";
 import { type DragEvent, type PointerEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { addToTimeline } from "../actions";
 import { ASSET_DRAG_TYPE } from "../media-panel";
 import { beginGesture, endGesture, seek, select, setZoom, updateGesture, useEditor } from "../store";
 import { ClipItem } from "./clip-item";
 import { TransitionMarks } from "./transition-marks";
 import {
+  COMPACT_HEADER_WIDTH,
   HEADER_WIDTH,
   RULER_HEIGHT,
   type RowBox,
@@ -49,12 +51,18 @@ type Drag =
       targets: Micros[];
     }
   | { kind: "trim"; clipId: Id; edge: Edge; edgeTime: Micros; fromTime: Micros; targets: Micros[] }
-  | { kind: "seek" };
+  | { kind: "seek" }
+  /** A touch that becomes a tap if it lifts without moving; if it moves, the timeline scrolls instead. */
+  | { kind: "tap"; clipId: Id | null; x: number; y: number };
 
 /** Pixels the pointer must travel before a press on a clip becomes a drag. */
 const DRAG_THRESHOLD = 4;
+/** A finger moving further than this is scrolling, not tapping. */
+const TAP_SLOP = 10;
 
-export function Timeline() {
+/** `compact` narrows the track headers for phones. */
+export function Timeline({ compact = false }: { compact?: boolean }) {
+  const headerWidth = compact ? COMPACT_HEADER_WIDTH : HEADER_WIDTH;
   const project = useEditor((s) => s.project);
   const zoom = useEditor((s) => s.zoom);
   const selection = useEditor((s) => s.selection);
@@ -70,31 +78,63 @@ export function Timeline() {
 
   useEffect(() => {
     const element = scrollRef.current!;
-    const measure = () => setView({ left: element.scrollLeft, width: element.clientWidth - HEADER_WIDTH });
+    const measure = () => setView({ left: element.scrollLeft, width: element.clientWidth - headerWidth });
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    /** Zooms to `next`, keeping the moment under `clientX` where it is. */
+    const zoomAround = (clientX: number, next: number) => {
+      const pointer = clientX - element.getBoundingClientRect().left - headerWidth;
+      const time = xToTime(element.scrollLeft + pointer, useEditor.getState().zoom);
+      // Rendered at once, so the lanes are already wide enough to scroll to.
+      flushSync(() => setZoom(next));
+      element.scrollLeft = timeToX(time, useEditor.getState().zoom) - pointer;
+    };
     // Ctrl/Cmd + wheel zooms around the pointer; it needs a non-passive listener to stop page zoom.
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      const { zoom: current } = useEditor.getState();
-      const pointer = event.clientX - element.getBoundingClientRect().left - HEADER_WIDTH;
-      const time = xToTime(element.scrollLeft + pointer, current);
-      const next = current * Math.exp(-event.deltaY * 0.0025);
-      setZoom(next);
-      element.scrollLeft = timeToX(time, useEditor.getState().zoom) - pointer;
+      zoomAround(event.clientX, useEditor.getState().zoom * Math.exp(-event.deltaY * 0.0025));
+    };
+    // Two fingers pinch to zoom around the point between them, as phone editors do.
+    let pinch: { spread: number; zoom: number } | null = null;
+    const spread = (touches: TouchList) => Math.hypot(touches[0]!.clientX - touches[1]!.clientX, touches[0]!.clientY - touches[1]!.clientY);
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 2) return;
+      pinch = { spread: spread(event.touches), zoom: useEditor.getState().zoom };
+      // The first finger's tap or drag is off; a drag already under way still finishes.
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setGuide(null);
+      if (drag?.kind === "move" || drag?.kind === "trim") endGesture();
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!pinch || event.touches.length !== 2) return;
+      if (event.cancelable) event.preventDefault();
+      const middle = (event.touches[0]!.clientX + event.touches[1]!.clientX) / 2;
+      zoomAround(middle, (pinch.zoom * spread(event.touches)) / pinch.spread);
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) pinch = null;
     };
     element.addEventListener("wheel", onWheel, { passive: false });
+    element.addEventListener("touchstart", onTouchStart, { passive: true });
+    element.addEventListener("touchmove", onTouchMove, { passive: false });
+    element.addEventListener("touchend", onTouchEnd);
+    element.addEventListener("touchcancel", onTouchEnd);
     return () => {
       observer.disconnect();
       element.removeEventListener("wheel", onWheel);
+      element.removeEventListener("touchstart", onTouchStart);
+      element.removeEventListener("touchmove", onTouchMove);
+      element.removeEventListener("touchend", onTouchEnd);
+      element.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, []);
+  }, [headerWidth]);
 
   /** Timeline time under a pointer, from its position in the scrolled lanes. */
   function pointerTime(clientX: number): Micros {
     const element = scrollRef.current!;
-    const x = clientX - element.getBoundingClientRect().left - HEADER_WIDTH + element.scrollLeft;
+    const x = clientX - element.getBoundingClientRect().left - headerWidth + element.scrollLeft;
     return Math.max(0, xToTime(x, zoom));
   }
 
@@ -124,6 +164,11 @@ export function Timeline() {
     if (!row || !clip || row.track.locked) return;
 
     if (event.shiftKey || event.ctrlKey || event.metaKey) return select([clipId], "toggle");
+    // On touch, an unselected clip only selects on a tap, so swiping across clips still scrolls.
+    if (event.pointerType === "touch" && !edge && !selection.includes(clipId)) {
+      dragRef.current = { kind: "tap", clipId, x: event.clientX, y: event.clientY };
+      return;
+    }
     if (!selection.includes(clipId)) select([clipId]);
 
     capture(event);
@@ -156,6 +201,16 @@ export function Timeline() {
 
   function onLanePointerDown(event: PointerEvent) {
     if (event.button !== 0) return;
+    if (event.pointerType === "touch") {
+      dragRef.current = { kind: "tap", clipId: null, x: event.clientX, y: event.clientY };
+      return;
+    }
+    onRulerPointerDown(event);
+  }
+
+  /** The ruler always scrubs, finger or mouse. */
+  function onRulerPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return;
     capture(event);
     select([]);
     dragRef.current = { kind: "seek" };
@@ -179,6 +234,10 @@ export function Timeline() {
     const { snapping } = useEditor.getState();
 
     if (drag.kind === "seek") return seekTo(event.clientX);
+    if (drag.kind === "tap") {
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > TAP_SLOP) dragRef.current = null;
+      return;
+    }
 
     const time = pointerTime(event.clientX);
     if (drag.kind === "trim") {
@@ -214,7 +273,20 @@ export function Timeline() {
     updateGesture((p) => moveClip(p, drag.clipId, placement));
   }
 
-  function onPointerUp() {
+  function onPointerUp(event: PointerEvent) {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setGuide(null);
+    if (drag?.kind === "tap") {
+      if (drag.clipId) return select([drag.clipId]);
+      select([]);
+      return seekTo(event.clientX);
+    }
+    if (drag && (drag.kind === "move" || drag.kind === "trim")) endGesture();
+  }
+
+  /** The browser took the touch over to scroll; a drag already under way still finishes. */
+  function onPointerCancel() {
     const drag = dragRef.current;
     dragRef.current = null;
     setGuide(null);
@@ -242,7 +314,7 @@ export function Timeline() {
       <TimelineToolbar viewWidth={view.width} />
       <div
         ref={scrollRef}
-        className="relative min-h-0 flex-1 touch-none select-none overflow-auto overscroll-contain"
+        className="relative min-h-0 flex-1 touch-pan-x touch-pan-y select-none overflow-auto overscroll-contain"
         onScroll={(event) => {
           // Read now: React clears currentTarget before a state updater runs.
           const left = event.currentTarget.scrollLeft;
@@ -250,14 +322,14 @@ export function Timeline() {
         }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onDragOver={onDragOver}
         onDrop={onDrop}
       >
-        <div className="relative min-h-full" style={{ width: HEADER_WIDTH + contentWidth }}>
+        <div className="relative min-h-full" style={{ width: headerWidth + contentWidth }}>
           <div className="sticky top-0 z-20 flex border-b border-border bg-panel" style={{ height: RULER_HEIGHT }}>
-            <div className="sticky left-0 z-10 shrink-0 border-r border-border bg-panel" style={{ width: HEADER_WIDTH }} />
-            <Ruler view={view} onPointerDown={onLanePointerDown} />
+            <div className="sticky left-0 z-10 shrink-0 border-r border-border bg-panel" style={{ width: headerWidth }} />
+            <Ruler view={view} headerWidth={headerWidth} onPointerDown={onRulerPointerDown} />
           </div>
 
           <div className="pb-10 pt-3">
@@ -271,7 +343,7 @@ export function Timeline() {
                 className={`flex border-b border-border ${row.isMain ? "bg-lane-main" : ""}`}
                 style={{ height: row.height }}
               >
-                <TrackHeader row={row} />
+                <TrackHeader row={row} compact={compact} />
                 <div className="relative flex-1" onPointerDown={onLanePointerDown}>
                   {row.track.clips.map((clip) => (
                     <ClipItem
@@ -288,7 +360,7 @@ export function Timeline() {
                   <TransitionMarks track={row.track} zoom={zoom} height={row.height} />
                   {row.isMain && empty && (
                     <p className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-xs text-subtle">
-                      Drag media here, or press + on a file.
+                      {compact ? "Tap Media below to add a clip." : "Drag media here, or press + on a file."}
                     </p>
                   )}
                 </div>
@@ -296,12 +368,12 @@ export function Timeline() {
             ))}
           </div>
 
-          <Playhead scrollRef={scrollRef} />
+          <Playhead scrollRef={scrollRef} headerWidth={headerWidth} />
           {guide !== null && (
             <div
               aria-hidden
               className="pointer-events-none absolute bottom-0 top-0 z-30 w-px bg-warning"
-              style={{ left: HEADER_WIDTH + timeToX(guide, zoom) }}
+              style={{ left: headerWidth + timeToX(guide, zoom) }}
             />
           )}
         </div>
@@ -315,7 +387,7 @@ export function Timeline() {
  * position from the store instead of re-rendering the timeline. It also
  * scrolls the timeline to keep itself in view while playing.
  */
-function Playhead({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }) {
+function Playhead({ scrollRef, headerWidth }: { scrollRef: RefObject<HTMLDivElement | null>; headerWidth: number }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -325,7 +397,7 @@ function Playhead({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }
       ref.current!.style.transform = `translateX(${x}px)`;
       const scroller = scrollRef.current;
       if (!playing || !scroller) return;
-      const visible = scroller.clientWidth - HEADER_WIDTH;
+      const visible = scroller.clientWidth - headerWidth;
       if (x > scroller.scrollLeft + visible - 24 || x < scroller.scrollLeft) {
         scroller.scrollLeft = Math.max(0, x - 24);
       }
@@ -334,14 +406,14 @@ function Playhead({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }
     return useEditor.subscribe((state, previous) => {
       if (state.time !== previous.time || state.zoom !== previous.zoom) place();
     });
-  }, [scrollRef]);
+  }, [scrollRef, headerWidth]);
 
   return (
     <div
       ref={ref}
       aria-hidden
       className="pointer-events-none absolute bottom-0 top-0 z-30"
-      style={{ left: HEADER_WIDTH }}
+      style={{ left: headerWidth }}
     >
       <div className="absolute -left-[5px] top-0 h-3 w-[11px] rounded-b-[3px] bg-accent" />
       <div className="absolute left-0 top-0 h-full w-px bg-accent" />

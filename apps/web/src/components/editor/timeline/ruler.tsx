@@ -3,7 +3,7 @@
 import { frameToMicros, type Micros } from "@akira/engine";
 import { type PointerEvent, useEffect, useRef } from "react";
 import { useEditor } from "../store";
-import { HEADER_WIDTH, rulerStep, RULER_HEIGHT, timeToX } from "./layout";
+import { rulerStep, RULER_HEIGHT, timeToX } from "./layout";
 
 /**
  * Time ruler with ticks, labels and markers. Only the visible stretch is
@@ -11,9 +11,11 @@ import { HEADER_WIDTH, rulerStep, RULER_HEIGHT, timeToX } from "./layout";
  */
 export function Ruler({
   view,
+  headerWidth,
   onPointerDown,
 }: {
   view: { left: number; width: number };
+  headerWidth: number;
   onPointerDown: (event: PointerEvent) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -67,7 +69,7 @@ export function Ruler({
   }, [view, zoom, markers, frameRate]);
 
   return (
-    <div className="sticky shrink-0 cursor-text" style={{ left: HEADER_WIDTH, width: view.width }} onPointerDown={onPointerDown}>
+    <div className="sticky shrink-0 cursor-text touch-none" style={{ left: headerWidth, width: view.width }} onPointerDown={onPointerDown}>
       <canvas ref={ref} aria-hidden className="block h-full w-full" style={{ height: RULER_HEIGHT }} />
     </div>
   );

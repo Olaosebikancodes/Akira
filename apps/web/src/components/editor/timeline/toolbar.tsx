@@ -64,8 +64,13 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
   }
 
   return (
-    <div role="toolbar" aria-label="Timeline tools" className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
-      <div className="flex items-center gap-0.5">
+    <div
+      role="toolbar"
+      aria-label="Timeline tools"
+      // On a phone the tools don't all fit, so the bar scrolls sideways.
+      className="flex h-10 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-border px-2 [scrollbar-width:none]"
+    >
+      <div className="flex shrink-0 items-center gap-0.5">
         <IconButton icon={ArrowUUpLeftIcon} label="Undo" shortcut="Ctrl+Z" onClick={undo} disabled={!canUndo} />
         <IconButton icon={ArrowUUpRightIcon} label="Redo" shortcut="Ctrl+Shift+Z" onClick={redo} disabled={!canRedo} />
         <Divider />
@@ -94,7 +99,7 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <IconButton
           icon={MagnetStraightIcon}
           label="Snapping"

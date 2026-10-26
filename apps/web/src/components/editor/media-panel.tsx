@@ -138,7 +138,7 @@ function MediaTile({ asset }: { asset: Asset }) {
           aria-label={`Add ${asset.name} to timeline`}
           title="Add to timeline"
           onClick={() => addToTimeline(asset)}
-          className={`press absolute right-1 top-1 grid size-6 place-items-center rounded-md bg-accent text-accent-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${focusRing}`}
+          className={`press absolute right-1 top-1 grid size-6 place-items-center rounded-md bg-accent text-accent-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 ${focusRing}`}
         >
           <PlusIcon size={14} weight="bold" aria-hidden />
         </button>

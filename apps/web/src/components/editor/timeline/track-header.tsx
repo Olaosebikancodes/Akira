@@ -13,13 +13,37 @@ import {
 } from "@phosphor-icons/react";
 import { commit } from "../store";
 import { focusRing } from "../ui";
-import { HEADER_WIDTH, type Row } from "./layout";
+import { COMPACT_HEADER_WIDTH, HEADER_WIDTH, type Row } from "./layout";
 
-/** Track label and its mute, hide and lock toggles. */
-export function TrackHeader({ row }: { row: Row }) {
+/** Track label and its mute, hide and lock toggles; on phones, just the one that matters most. */
+export function TrackHeader({ row, compact = false }: { row: Row; compact?: boolean }) {
   const { track } = row;
   const name = row.isMain ? "Main" : track.kind === "audio" ? "Audio" : "Overlay";
   const toggle = (flag: TrackFlag) => commit((project) => setTrackFlag(project, track.id, flag, !track[flag]));
+
+  if (compact) {
+    return (
+      <div className="sticky left-0 z-10 grid shrink-0 place-items-center border-r border-border bg-panel" style={{ width: COMPACT_HEADER_WIDTH }}>
+        {track.kind === "video" ? (
+          <Toggle
+            on={track.hidden}
+            onIcon={EyeSlashIcon}
+            offIcon={EyeIcon}
+            label={`${track.hidden ? "Show" : "Hide"} ${name.toLowerCase()} track`}
+            onClick={() => toggle("hidden")}
+          />
+        ) : (
+          <Toggle
+            on={track.muted}
+            onIcon={SpeakerSimpleSlashIcon}
+            offIcon={SpeakerSimpleHighIcon}
+            label={`${track.muted ? "Unmute" : "Mute"} ${name.toLowerCase()} track`}
+            onClick={() => toggle("muted")}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

@@ -69,7 +69,8 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
         // Pointer presses select in onPointerDown; this is Enter from the keyboard.
         if (event.detail === 0) select([clip.id], event.shiftKey ? "toggle" : "replace");
       }}
-      className={`absolute top-1 overflow-hidden rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${locked ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing"}`}
+      // A selected clip keeps the finger for dragging; others let a swipe scroll the timeline.
+      className={`absolute top-1 overflow-hidden rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "touch-none" : ""} ${locked ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing"}`}
       style={{ left, width, height: height - 9, background: color }}
     >
       {thumbnails && asset.kind !== "audio" && (
@@ -104,7 +105,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
               event.stopPropagation();
               onPointerDown(event, clip.id, "start");
             }}
-            className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-[var(--clip-selected)] opacity-0 hover:opacity-80"
+            className={`absolute inset-y-0 left-0 w-1.5 cursor-ew-resize touch-none bg-[var(--clip-selected)] opacity-0 hover:opacity-80 pointer-coarse:w-4 ${selected ? "pointer-coarse:opacity-70" : ""}`}
           />
           <span
             aria-hidden
@@ -112,7 +113,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
               event.stopPropagation();
               onPointerDown(event, clip.id, "end");
             }}
-            className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-[var(--clip-selected)] opacity-0 hover:opacity-80"
+            className={`absolute inset-y-0 right-0 w-1.5 cursor-ew-resize touch-none bg-[var(--clip-selected)] opacity-0 hover:opacity-80 pointer-coarse:w-4 ${selected ? "pointer-coarse:opacity-70" : ""}`}
           />
         </>
       )}

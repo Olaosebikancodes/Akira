@@ -35,7 +35,7 @@ export function TransitionMarks({ track, zoom, height }: { track: Track; zoom: n
         className={`press absolute z-10 grid place-items-center rounded-[4px] outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${
           transition
             ? "border border-white/60 bg-black/55 text-foreground backdrop-blur-sm hover:bg-black/70"
-            : "bg-accent text-accent-foreground opacity-0 hover:opacity-100"
+            : "bg-accent text-accent-foreground opacity-0 hover:opacity-100 pointer-coarse:opacity-100"
         }`}
         style={{ left: cut - width / 2, width, top: 1 + clipHeight / 2 - 9, height: 18 }}
       >
