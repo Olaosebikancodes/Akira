@@ -30,6 +30,10 @@ export { coverScale, type LayerGeometry, layerGeometry, type Point, pointInQuad 
 export { gradeColor } from "./render/grade";
 export { measureText } from "./render/text";
 export { findTransition, loadTransitions, type TransitionDefinition } from "./render/transitions";
+export { type LoadedProject, ProjectLibrary, type ProjectSummary } from "./storage/library";
+export { PROJECT_FORMAT, ProjectFileError, parseProject, serializeProject } from "./storage/project-file";
+export { exportProjectZip, importProjectZip } from "./storage/project-zip";
+export { ZipError } from "./storage/zip";
 export * from "./time";
 export { exportInWorker, serveExportWorker } from "./worker/export-worker";
 export { serveRenderWorker, type WorkerScope } from "./worker/render-worker";

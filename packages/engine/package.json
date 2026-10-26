@@ -15,6 +15,7 @@
     "generate:transitions": "node scripts/generate-transitions.mjs"
   },
   "dependencies": {
+    "client-zip": "2.5.1",
     "mediabunny": "^1.62.1"
   },
   "devDependencies": {
