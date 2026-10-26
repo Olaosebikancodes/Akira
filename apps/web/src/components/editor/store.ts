@@ -55,6 +55,17 @@ export interface Notice {
  */
 export type SaveState = "new" | "pending" | "saved" | "error";
 
+/** Work running in the background, such as reversing a clip. */
+export interface Job {
+  id: Id;
+  /** The clip it's for, so the same clip isn't started twice. */
+  clipId: Id;
+  label: string;
+  /** 0 to 1. */
+  progress: number;
+  cancel: () => void;
+}
+
 interface EditorState {
   project: Project;
   past: Project[];
@@ -82,6 +93,7 @@ interface EditorState {
   saveState: SaveState;
   /** True while a saved project's media is being opened. */
   opening: boolean;
+  jobs: Job[];
 }
 
 function blankProject(): Project {
@@ -120,6 +132,7 @@ export const useEditor = create<EditorState>(() => ({
   textFocusRequest: 0,
   player: null,
   opening: false,
+  jobs: [],
 }));
 
 const set = useEditor.setState;
@@ -249,6 +262,27 @@ export function loadProject(project: Project, files: Map<Id, MediaFile>): void {
     void loadThumbnails(asset, media);
     void loadWaveform(asset, media);
   }
+}
+
+export function startJob(job: Omit<Job, "id" | "progress">): Id {
+  const id = createId();
+  set({ jobs: [...get().jobs, { ...job, id, progress: 0 }] });
+  return id;
+}
+
+export function updateJob(id: Id, progress: number): void {
+  set({ jobs: get().jobs.map((job) => (job.id === id ? { ...job, progress } : job)) });
+}
+
+export function finishJob(id: Id): void {
+  set({ jobs: get().jobs.filter((job) => job.id !== id) });
+}
+
+/** Adds media Akira made itself, such as a reversed copy. It isn't shown in the media panel. */
+export function addGeneratedAsset(asset: Asset, media: MediaFile): void {
+  addAsset(asset, media);
+  void loadThumbnails(asset, media);
+  void loadWaveform(asset, media);
 }
 
 export function setOpening(opening: boolean): void {

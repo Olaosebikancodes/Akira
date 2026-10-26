@@ -18,7 +18,7 @@ import {
   toSourceTime,
   type Waveform,
 } from "@akira/engine";
-import { SnowflakeIcon, SpeakerSimpleSlashIcon } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, SnowflakeIcon, SpeakerSimpleSlashIcon } from "@phosphor-icons/react";
 import { memo, type PointerEvent, useEffect, useRef } from "react";
 import { select, useEditor } from "../store";
 import { timeToX, xToTime } from "./layout";
@@ -78,6 +78,7 @@ export const ClipItem = memo(function ClipItem({ clip, asset, zoom, height, sele
       {waveform && !frozen && <WaveformStrip clip={clip} waveform={waveform} zoom={zoom} width={width} height={waveHeight} />}
       <span className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/55 to-transparent px-1.5 pb-2 pt-0.5 text-[11px] font-medium leading-tight text-foreground">
         {frozen && <SnowflakeIcon size={11} aria-hidden className="shrink-0" />}
+        {asset.reverseOf && <ArrowCounterClockwiseIcon size={11} aria-label="Reversed" className="shrink-0" />}
         {silent && <SpeakerSimpleSlashIcon size={11} aria-hidden className="shrink-0" />}
         <span className="truncate">{label}</span>
         {clip.speed !== 1 && <span className="shrink-0 rounded bg-black/50 px-1 font-mono text-[10px]">{clip.speed}×</span>}

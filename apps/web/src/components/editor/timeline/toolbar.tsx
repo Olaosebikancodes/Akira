@@ -2,6 +2,7 @@
 
 import { assetOf, clipAt, isSilent, isStill, locateClip, mainTrack, wallClock } from "@akira/engine";
 import {
+  ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   ArrowsOutLineHorizontalIcon,
@@ -31,6 +32,7 @@ import {
   toggleMarkerAtPlayhead,
   zoomToFit,
 } from "../actions";
+import { canReverse, toggleReverse } from "../jobs";
 import { MAX_ZOOM, MIN_ZOOM, redo, setSnapping, setZoom, undo, useEditor } from "../store";
 import { focusRing, IconButton } from "../ui";
 
@@ -51,6 +53,8 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
   const targetAsset = target && assetOf(project, target.clip);
   const isMoving = target ? !isStill(project, target.clip) : false;
   const canFreeze = target?.track.kind === "video" && isMoving;
+  // Re-checked on every store change: reversing depends on the clip, its track and running jobs.
+  const canReverseTarget = useEditor(() => canReverse(targetId ?? undefined));
   const canDetach = target?.track.kind === "video" && isMoving && !!targetAsset?.audio && !isSilent(target.clip);
 
   function onReplaceChosen(event: ChangeEvent<HTMLInputElement>) {
@@ -70,6 +74,7 @@ export function TimelineToolbar({ viewWidth }: { viewWidth: number }) {
         <IconButton icon={CopySimpleIcon} label="Duplicate" shortcut="Ctrl+D" onClick={duplicateSelection} disabled={!target} />
         <IconButton icon={SnowflakeIcon} label="Freeze frame" shortcut="F" onClick={freezeAtPlayhead} disabled={!canFreeze} />
         <IconButton icon={WaveformIcon} label="Detach audio" onClick={detachSelectedAudio} disabled={!canDetach} />
+        <IconButton icon={ArrowCounterClockwiseIcon} label="Reverse" onClick={() => void toggleReverse()} disabled={!canReverseTarget} />
         <input id={replaceId} type="file" accept="video/*,audio/*,image/*" className="peer sr-only" onChange={onReplaceChosen} disabled={!target} />
         <label
           htmlFor={replaceId}

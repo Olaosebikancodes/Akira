@@ -16,7 +16,8 @@ export function MediaPanel() {
   const importing = useEditor((s) => s.importing);
   const [dropping, setDropping] = useState(false);
   const inputId = useId();
-  const list = Object.values(assets);
+  // Reversed copies are Akira's own; they belong to the clips that use them.
+  const list = Object.values(assets).filter((asset) => !asset.reverseOf);
 
   function onChosen(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])];

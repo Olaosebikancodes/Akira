@@ -88,8 +88,28 @@ function SmallScreen() {
 
 function Notices() {
   const notices = useEditor((s) => s.notices);
+  const jobs = useEditor((s) => s.jobs);
   return (
     <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
+      {jobs.map((job) => (
+        // Background work, such as reversing a clip, with its progress and a way out.
+        <div
+          key={job.id}
+          role="status"
+          className="pointer-events-auto flex flex-col gap-2 rounded-lg border border-border-strong bg-raised p-3 text-xs shadow-[0_8px_24px_oklch(0%_0_0/0.4)]"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-foreground">{job.label}…</p>
+            <span className="font-mono tabular-nums text-muted">{Math.floor(job.progress * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <progress value={job.progress} max={1} aria-label={`${job.label} progress`} className="h-1.5 flex-1 accent-accent" />
+            <button type="button" onClick={job.cancel} className={`press rounded px-1.5 py-0.5 text-muted hover:bg-raised-hover hover:text-foreground ${focusRing}`}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ))}
       {notices.map((notice, index) => (
         <div
           key={`${index}-${notice.message}`}
@@ -198,7 +218,9 @@ function useOpenProject(): boolean {
     // A new project's first save puts its id in the address; it's already open.
     if (id && id === useEditor.getState().project.id) return;
     if (!id) {
-      resetEditor();
+      // Only clear a project that was saved or has work in it; resetting a blank one would wipe its notices.
+      const { saveState, project } = useEditor.getState();
+      if (saveState !== "new" || project.tracks.some((track) => track.clips.length > 0)) resetEditor();
       return;
     }
     void openSavedProject(id).then((found) => {
