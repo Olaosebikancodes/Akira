@@ -720,6 +720,107 @@ test("fades a video clip in with an in animation", async ({ page }) => {
   await expect.poll(() => colourAt(page)).toBe("green");
 });
 
+// Saving
+
+function saved(page: Page): Locator {
+  return page.getByRole("status").filter({ hasText: /^Saved$/ });
+}
+
+/** Goes to the project list, waiting for the address too: Next can show a page before updating it. */
+async function openProjects(page: Page) {
+  await page.getByRole("link", { name: "All projects" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+}
+
+async function nameProject(page: Page, name: string) {
+  await page.getByLabel("Project name").fill(name);
+  await page.getByLabel("Project name").blur();
+  await expect(saved(page)).toBeVisible();
+}
+
+test("saves as you edit, and reopens after a reload", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await nameProject(page, "Holiday cut");
+  await expect(page).toHaveURL(/\/editor\?project=/);
+
+  await page.reload();
+  await page.getByLabel("Video preview").waitFor();
+  await expect(page.getByLabel("Project name")).toHaveValue("Holiday cut");
+  await expect(duration(page)).toHaveText("00:00:03:00");
+  await expect(clips(page, "colors.mp4")).toHaveCount(1);
+  await expect.poll(() => colourAt(page)).toBe("red");
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("doesn't save an empty project", async ({ page }) => {
+  await openProjects(page);
+  await expect(page.getByText("No projects yet")).toBeVisible();
+});
+
+test("lists saved projects, newest first, and opens them", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await nameProject(page, "First");
+  await openProjects(page);
+  await page.getByRole("link", { name: "New project" }).click();
+  await page.getByLabel("Video preview").waitFor();
+  await expect(duration(page)).toHaveText("00:00:00:00");
+  await addClip(page, FIXTURES.sticker);
+  await nameProject(page, "Second");
+
+  await openProjects(page);
+  await expect(page.getByRole("list", { name: "Projects" }).getByRole("heading")).toHaveText(["Second", "First"]);
+  await page.getByRole("link", { name: "Open First" }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("First");
+  await expect(duration(page)).toHaveText("00:00:03:00");
+});
+
+test("deletes a project after asking", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await nameProject(page, "Scratch");
+  await openProjects(page);
+  await page.getByRole("button", { name: "Delete Scratch" }).click();
+  await page.getByRole("button", { name: "Keep" }).click();
+  await expect(page.getByRole("heading", { name: "Scratch" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete Scratch" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("No projects yet")).toBeVisible();
+});
+
+test("downloads a project as .zip and imports it back, as a copy if it's still here", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await nameProject(page, "Trip");
+  await openProjects(page);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download Trip as .zip" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Trip.zip");
+  const zip = test.info().outputPath("Trip.zip");
+  await download.saveAs(zip);
+
+  await page.getByRole("button", { name: "Delete Trip" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("No projects yet")).toBeVisible();
+  await page.getByLabel("Import project").setInputFiles(zip);
+  await expect(page).toHaveURL(/\/editor\?project=/);
+  const imported = page.url();
+  await page.getByLabel("Video preview").waitFor();
+  await expect(page.getByLabel("Project name")).toHaveValue("Trip");
+  await expect(duration(page)).toHaveText("00:00:03:00");
+  await expect.poll(() => colourAt(page)).toBe("red");
+
+  await openProjects(page);
+  await page.getByLabel("Import project").setInputFiles(zip);
+  await expect(page).toHaveURL(/\/editor\?project=/);
+  expect(page.url()).not.toBe(imported);
+  await expect(page.getByLabel("Project name")).toHaveValue("Trip (copy)");
+});
+
+test("explains when a saved project can't be found", async ({ page }) => {
+  await page.goto("/editor?project=missing");
+  await expect(errorNotice(page)).toContainText("isn't saved in this browser");
+  await expect(page).toHaveURL(/\/editor$/);
+});
+
 // Export
 
 test("exports, and the export re-imports with the edited length", async ({ page }) => {
