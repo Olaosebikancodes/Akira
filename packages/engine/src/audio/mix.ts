@@ -18,9 +18,10 @@ const PREROLL_SECONDS = 0.05;
 /**
  * Renders the whole timeline's audio to stereo PCM, faster than real time.
  * It uses the same placement, filters and fades as live playback, so the
- * export sounds exactly like the preview.
+ * export sounds exactly like the preview. Decoding is the slow part, so
+ * `signal` is checked between decoded buffers.
  */
-export async function renderAudioMix(project: Project, files: MediaFiles, duration: Micros): Promise<PcmAudio> {
+export async function renderAudioMix(project: Project, files: MediaFiles, duration: Micros, signal?: AbortSignal): Promise<PcmAudio> {
   const length = Math.max(1, Math.ceil(microsToSeconds(duration) * MIX_SAMPLE_RATE));
   const preroll = Math.round(PREROLL_SECONDS * MIX_SAMPLE_RATE);
   const context = new OfflineAudioContext({
@@ -33,6 +34,7 @@ export async function renderAudioMix(project: Project, files: MediaFiles, durati
   for (const clip of audibleClips(project, files)) {
     const chain = connectClipChain(context, context.destination, clip.clip, PREROLL_SECONDS, 0);
     for await (const placed of clipAudio(clip, 0)) {
+      signal?.throwIfAborted();
       playPlacedBuffer(context, chain.input, placed, clip.clip, PREROLL_SECONDS - chain.latency);
     }
   }

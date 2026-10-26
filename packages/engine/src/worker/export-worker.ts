@@ -75,10 +75,14 @@ export async function exportInWorker(
   files: MediaFiles,
   options: Omit<ExportOptions, "audio"> & { fontBaseUrl: string },
 ): Promise<Blob> {
-  const audio =
-    audibleClips(project, files).length > 0
-      ? await renderAudioMix(project, files, projectDuration(project))
-      : null;
+  let audio: PcmAudio | null = null;
+  try {
+    // The mix renders here because OfflineAudioContext only exists on the main thread.
+    if (audibleClips(project, files).length > 0) audio = await renderAudioMix(project, files, projectDuration(project), options.signal);
+  } catch (error) {
+    if (options.signal?.aborted) throw new ExportCancelledError();
+    throw error;
+  }
   if (options.signal?.aborted) throw new ExportCancelledError();
 
   const used = usedAssets(project);

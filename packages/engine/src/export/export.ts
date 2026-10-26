@@ -93,7 +93,7 @@ export async function exportProject(
 
   const encodeAudio = async () => {
     if (!audioSource) return;
-    const mix = options.audio ?? (await renderAudioMix(project, files, duration));
+    const mix = options.audio ?? (await renderAudioMix(project, files, duration, options.signal));
     throwIfCancelled();
     const sample = new AudioSample({
       data: planar(mix),
@@ -127,6 +127,8 @@ export async function exportProject(
     await output.finalize();
   } catch (error) {
     await output.cancel();
+    // A cancel can surface as the browser's own AbortError; callers only need to know it was cancelled.
+    if (options.signal?.aborted) throw new ExportCancelledError();
     throw error;
   } finally {
     await renderer.close();
