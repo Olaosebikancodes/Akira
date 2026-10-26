@@ -49,4 +49,5 @@ export { exportInWorker, serveExportWorker } from "./worker/export-worker";
 export { type TrackPoint } from "./jobs/analyze";
 export { JobCancelledError } from "./jobs/cancel";
 export { type Job, type JobResult, runJobInWorker, serveJobWorker } from "./worker/job-worker";
+export { serveAudioWorker } from "./worker/audio-worker";
 export { serveRenderWorker, type WorkerScope } from "./worker/render-worker";

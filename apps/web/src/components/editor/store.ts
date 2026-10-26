@@ -76,6 +76,8 @@ interface EditorState {
   selection: Id[];
   time: Micros;
   playing: boolean;
+  /** Where the playhead was when playback started; heavy panels show this while playing. */
+  playStart: Micros;
   /** Pixels per second on the timeline. */
   zoom: number;
   snapping: boolean;
@@ -131,6 +133,7 @@ function freshProjectState(project: Project) {
 export const useEditor = create<EditorState>(() => ({
   ...freshProjectState(blankProject()),
   playing: false,
+  playStart: 0,
   zoom: 60,
   snapping: true,
   importing: 0,
@@ -227,6 +230,20 @@ function pruneSelection(): void {
   const live = new Set(project.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
   const kept = selection.filter((id) => live.has(id));
   if (kept.length !== selection.length) set({ selection: kept });
+}
+
+/**
+ * The playhead as heavy panels need it: exact while editing, but held where
+ * playback started while it plays. Re-rendering the inspector sixty times a
+ * second kept the main thread too busy to decode and schedule sound in time.
+ */
+export function useEditingTime(): Micros {
+  return useEditor((s) => (s.playing ? s.playStart : s.time));
+}
+
+/** Playback started or stopped; remembers where it started, for `useEditingTime`. */
+export function setPlaying(playing: boolean): void {
+  set(playing ? { playing, playStart: get().time } : { playing });
 }
 
 export function seek(time: Micros): void {

@@ -15,7 +15,7 @@ import { seekToEdit, stepFrames } from "./actions";
 import { CanvasOverlay } from "./canvas-overlay";
 import { SafeZones } from "./safe-zones";
 import { TrackingOverlay } from "./tracking-overlay";
-import { fontBaseUrl, notify, setSafeZones, togglePlayback, useEditor } from "./store";
+import { fontBaseUrl, notify, setPlaying, setSafeZones, togglePlayback, useEditor } from "./store";
 import { IconButton } from "./ui";
 
 /** The canvas the project plays in, its on-canvas handles and the transport bar. */
@@ -38,16 +38,18 @@ export function Preview() {
 
     const { project: initial, files: initialFiles } = useEditor.getState();
     const renderWorker = new Worker(new URL("./workers/render.worker.ts", import.meta.url), { type: "module" });
+    // Sound for playback decodes in its own worker, so a busy page can't cut it out.
+    const audioWorker = new Worker(new URL("./workers/audio.worker.ts", import.meta.url), { type: "module" });
     const player = new Player(
       canvas,
       initial,
       initialFiles,
       {
         onTimeUpdate: (time) => useEditor.setState({ time }),
-        onPlayingChange: (playing) => useEditor.setState({ playing }),
+        onPlayingChange: setPlaying,
         onError: (error) => notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }),
       },
-      { renderWorker, fontBaseUrl: fontBaseUrl() },
+      { renderWorker, audioWorker, fontBaseUrl: fontBaseUrl() },
     );
     useEditor.setState({ player });
     return () => {

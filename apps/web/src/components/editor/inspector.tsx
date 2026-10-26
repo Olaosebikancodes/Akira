@@ -43,7 +43,7 @@ import { TrackingSection } from "./inspector-motion";
 import { AnimationSection, TextSections } from "./inspector-text";
 import { KeyframeButton, KeyframesSection } from "./keyframe-controls";
 import { SpeedSection } from "./speed-section";
-import { commit, endGesture, liveEdit, useEditor } from "./store";
+import { commit, endGesture, liveEdit, useEditingTime, useEditor } from "./store";
 import { Button, focusRing, IconButton, Section, Segmented, SliderField, Tabs } from "./ui";
 
 const FRAME_RATES = [
@@ -112,7 +112,7 @@ function ClipInspector({
   tab: ClipTab;
   onTab: (tab: ClipTab) => void;
 }) {
-  const time = useEditor((s) => s.time);
+  const time = useEditingTime();
   const asset = assetOf(project, clip);
   const still = isStill(project, clip);
   // Values as they are at the playhead, so keyframed ones read right.

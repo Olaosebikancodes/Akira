@@ -22,7 +22,7 @@ import {
 } from "@akira/engine";
 import { type KeyboardEvent, type MouseEvent, type PointerEvent, useRef, useState } from "react";
 import { toggleReverse } from "./jobs";
-import { beginGesture, commit, endGesture, liveEdit, updateGesture, useEditor } from "./store";
+import { beginGesture, commit, endGesture, liveEdit, updateGesture, useEditingTime, useEditor } from "./store";
 import { Button, focusRing, Section, Segmented, SliderField, Toggle } from "./ui";
 
 const GRAPH_WIDTH = 256;
@@ -105,7 +105,7 @@ function flatCurve(clip: Clip): SpeedPoint[] {
 
 function CurveEditor({ clip }: { clip: Clip }) {
   const curve = clip.speedCurve!;
-  const time = useEditor((s) => s.time);
+  const time = useEditingTime();
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState<{ index: number; start: SpeedPoint[] } | null>(null);
   const length = clip.sourceOut - clip.sourceIn;

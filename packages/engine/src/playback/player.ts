@@ -1,14 +1,22 @@
 import { connectClipChain } from "../audio/chain";
-import { type AudibleClip, audibleClips, clipAudio, playPlacedBuffer } from "../audio/schedule";
+import { placeAudioBuffer } from "../audio/placement";
+import { type AudibleClip, audibleClips, clipAudio, type PlacedBuffer, playPlacedBuffer } from "../audio/schedule";
 import { loadAudioWorklets } from "../audio/worklet";
 import type { MediaFiles } from "../media/media-file";
 import type { Project } from "../project/model";
 import { projectDuration } from "../project/query";
+import { clipEnd, toSourceTime } from "../project/timing";
 import { type FrameRate, type Micros, microsToSeconds, secondsToMicros } from "../time";
+import { WorkerAudioFeed } from "../worker/audio-worker";
 import { type ClockAnchor, LocalVideoOutput, type VideoOutput, WorkerVideoOutput, wallClock } from "./video-output";
 
-/** How far ahead of the playhead audio is decoded and scheduled. */
-const AUDIO_LOOKAHEAD: Micros = 1_000_000;
+/** How far ahead of the playhead audio is scheduled; the page can stall this long without a gap. */
+const AUDIO_LOOKAHEAD: Micros = 2_000_000;
+
+/** A buffer arriving this late means decoding has fallen behind the playhead. */
+const CATCH_UP_AFTER: Micros = 200_000;
+/** How far ahead of the playhead decoding restarts after falling behind. */
+const RESUME_AHEAD: Micros = 300_000;
 
 /** Gap before the first sound after pressing play, so decoders can get ahead. */
 const START_DELAY_SECONDS = 0.1;
@@ -25,6 +33,11 @@ export interface PlayerOptions {
    * hand canvases to workers, video renders there instead of on the main thread.
    */
   renderWorker?: Worker;
+  /**
+   * A worker running `serveAudioWorker`. When given, sound for playback is
+   * decoded there, so a busy page can't starve it; the player ends it on dispose.
+   */
+  audioWorker?: Worker;
   /** Absolute URL the built-in fonts are served from, ending in "/". Needed with a render worker. */
   fontBaseUrl?: string;
 }
@@ -50,6 +63,7 @@ export class Player {
   private timelineOrigin = 0;
   private animationFrame = 0;
   private audioSession: AudioSession | null = null;
+  private readonly audioFeed: WorkerAudioFeed | null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -63,6 +77,8 @@ export class Player {
       options.renderWorker && "transferControlToOffscreen" in canvas
         ? new WorkerVideoOutput(options.renderWorker, canvas, project, files, options.fontBaseUrl ?? "/fonts/", onError)
         : new LocalVideoOutput(canvas, project, files, onError);
+    this.audioFeed = options.audioWorker ? new WorkerAudioFeed(options.audioWorker) : null;
+    this.audioFeed?.setFiles(files);
     this.video.show(0);
   }
 
@@ -86,6 +102,7 @@ export class Player {
     this.project = project;
     this.files = files;
     this.video.setProject(project, files);
+    this.audioFeed?.setFiles(files);
     this.seek(Math.min(this.time, this.duration));
   }
 
@@ -160,6 +177,7 @@ export class Player {
   async dispose(): Promise<void> {
     if (this.playing) this.stop();
     await this.video.dispose();
+    this.audioFeed?.dispose();
     await this.audioContext?.close();
   }
 
@@ -192,6 +210,7 @@ export class Player {
       context,
       this.master!,
       audibleClips(this.project, this.files),
+      this.audioFeed,
       from,
       this.timelineOrigin,
       () => this.clock(),
@@ -226,6 +245,7 @@ class AudioSession {
     private readonly context: AudioContext,
     destination: AudioNode,
     clips: AudibleClip[],
+    private readonly feed: WorkerAudioFeed | null,
     readonly from: Micros,
     private readonly timelineOrigin: number,
     private readonly clock: () => Micros,
@@ -245,22 +265,61 @@ class AudioSession {
 
   private async stream(clip: AudibleClip): Promise<void> {
     const chain = connectClipChain(this.context, this.output, clip.clip, this.timelineOrigin, this.from);
-    for await (const placed of clipAudio(clip, this.from)) {
-      if (this.stopped) return;
-      await this.waitUntilNeeded(placed.placement.at);
-      if (this.stopped) return;
+    let from = this.from;
+    // Decoding can fall behind when the page is busy. Working through sound
+    // that's already been missed only falls further behind, so when a buffer
+    // turns up too late, decoding starts again a little ahead of the playhead.
+    for (let behind = true; behind && !this.stopped; ) {
+      behind = false;
+      for await (const placed of this.decoded(clip, from)) {
+        if (this.stopped) return;
+        await this.waitUntilNeeded(placed.placement.at);
+        if (this.stopped) return;
+        if (this.clock() - placed.placement.at > CATCH_UP_AFTER) {
+          behind = true;
+          from = this.clock() + RESUME_AHEAD;
+          break;
+        }
 
-      // Filters that delay their output (hiss reduction) get their audio that much early.
-      const node = playPlacedBuffer(
-        this.context,
-        chain.input,
-        placed,
-        clip.clip,
-        this.timelineOrigin - chain.latency,
-      );
-      if (!node) continue;
-      this.nodes.add(node);
-      node.onended = () => this.nodes.delete(node);
+        // Filters that delay their output (hiss reduction) get their audio that much early.
+        const node = playPlacedBuffer(
+          this.context,
+          chain.input,
+          placed,
+          clip.clip,
+          this.timelineOrigin - chain.latency,
+        );
+        if (!node) continue;
+        this.nodes.add(node);
+        node.onended = () => this.nodes.delete(node);
+      }
+    }
+  }
+
+  /** A clip's sound from timeline time `from`, decoded by the audio worker when there is one. */
+  private async *decoded(clip: AudibleClip, from: Micros): AsyncGenerator<PlacedBuffer, void, unknown> {
+    if (!this.feed) {
+      yield* clipAudio(clip, from);
+      return;
+    }
+    if (clipEnd(clip.clip) <= from) return;
+    const start = Math.max(clip.clip.sourceIn, toSourceTime(clip.clip, from));
+    const chunks = this.feed.stream(clip.clip.assetId, start, clip.clip.sourceOut);
+    try {
+      for await (const chunk of chunks) {
+        const frames = chunk.channels[0]?.length ?? 0;
+        if (frames === 0) continue;
+        const duration = Math.round((frames / chunk.sampleRate) * 1_000_000);
+        // Taking a chunk lets the worker decode further ahead.
+        chunks.consumed(chunk.timestamp + duration);
+        const placement = placeAudioBuffer(clip.clip, chunk.timestamp, duration, from);
+        if (!placement) continue;
+        const buffer = new AudioBuffer({ length: frames, numberOfChannels: chunk.channels.length, sampleRate: chunk.sampleRate });
+        chunk.channels.forEach((data, channel) => buffer.copyToChannel(data as Float32Array<ArrayBuffer>, channel));
+        yield { buffer, placement };
+      }
+    } finally {
+      await chunks.return?.();
     }
   }
 
