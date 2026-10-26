@@ -98,7 +98,7 @@ function TransitionList() {
           className={`h-8 w-full rounded-md border border-border bg-raised pl-7 pr-2 text-xs text-foreground placeholder:text-subtle ${focusRing}`}
         />
       </div>
-      <p className="shrink-0 px-4 pt-2 text-[11px] text-subtle">Click to put one between the selected clip and the next.</p>
+      <p className="shrink-0 px-4 pt-2 text-[11px] text-subtle">Pick one to put between the selected clip and the next.</p>
       {!transitions ? (
         <p className="px-4 py-3 text-xs text-muted">Loading transitions…</p>
       ) : shown.length === 0 ? (
@@ -245,7 +245,7 @@ function EffectList() {
   });
   return (
     <>
-      <p className="shrink-0 px-4 pt-3 text-[11px] text-subtle">Click to add to the selected clip. Fine-tune it in the inspector.</p>
+      <p className="shrink-0 px-4 pt-3 text-[11px] text-subtle">Pick one to add to the selected clip, then fine-tune it in the clip’s settings.</p>
       <ul aria-label="Effects" className="grid min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto p-3">
         {EFFECTS.map((effect) => {
           const Glyph = EFFECT_ICONS[effect.kind];

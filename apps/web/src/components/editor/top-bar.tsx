@@ -93,8 +93,8 @@ export function TopBar() {
         >
           <SquaresFourIcon size={17} aria-hidden />
         </Link>
-        <h1 className="text-[15px] font-semibold tracking-tight">Akira</h1>
-        <span aria-hidden className="h-4 w-px bg-border" />
+        <h1 className="sr-only text-[15px] font-semibold tracking-tight sm:not-sr-only">Akira</h1>
+        <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
         <label className="sr-only" htmlFor="project-name">
           Project name
         </label>
@@ -105,13 +105,16 @@ export function TopBar() {
           spellCheck={false}
           value={name}
           onChange={(event) => setProjectName(event.target.value)}
-          className={`h-7 min-w-0 max-w-64 rounded-md bg-transparent px-2 text-[13px] text-muted hover:bg-raised focus:bg-raised focus:text-foreground ${focusRing}`}
+          className={`h-7 min-w-0 max-w-36 rounded-md sm:max-w-64 bg-transparent px-2 text-[13px] text-muted hover:bg-raised focus:bg-raised focus:text-foreground ${focusRing}`}
         />
         <SaveStatus />
       </div>
 
       <div data-tour="export" className="relative flex items-center gap-2" aria-live="polite">
-        <IconButton icon={QuestionIcon} label="Take the tour" onClick={openTour} />
+        {/* The tour points at the desktop layout's panels. */}
+        <span className="hidden lg:contents">
+          <IconButton icon={QuestionIcon} label="Take the tour" onClick={openTour} />
+        </span>
         {exporting.kind === "running" && (
           <>
             <progress value={exporting.progress} max={1} aria-label="Export progress" className="h-1.5 w-32 accent-accent" />

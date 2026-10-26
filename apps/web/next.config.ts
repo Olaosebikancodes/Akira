@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // Stops `next dev` from writing an AGENTS.md into the app.
   agentRules: false,
+  // The dev badge sits over the phone layout's tool bar; build errors still show in the overlay.
+  devIndicators: false,
   // The engine is shipped as TypeScript source from the workspace.
   transpilePackages: ["@akira/engine"],
   turbopack: {

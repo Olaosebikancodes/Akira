@@ -3,7 +3,7 @@
 import { frameRateToNumber, setFontBaseUrl } from "@akira/engine";
 import { WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
   deleteSelection,
   duplicateSelection,
@@ -19,6 +19,7 @@ import {
 } from "./actions";
 import { Inspector } from "./inspector";
 import { LeftPanel } from "./left-panel";
+import { MobileEditor } from "./mobile-editor";
 import { openSavedProject, startAutosave } from "./persistence";
 import { Preview } from "./preview";
 import {
@@ -49,15 +50,25 @@ export function Editor() {
   const touring = useEditor((s) => s.tourOpen);
   useKeyboardShortcuts();
   useUnsavedWarning();
-  // First-timers get a short tour of the editor; Help replays it.
-  useEffect(() => openTourIfNew(), []);
+  const wide = useWideScreen();
+  // First-timers get a short tour of the desktop editor; Help replays it.
+  useEffect(() => {
+    if (window.matchMedia(WIDE).matches) openTourIfNew();
+  }, []);
+
+  // Only one layout is ever mounted: each has its own preview, and so its own player.
+  if (!wide) {
+    return (
+      <>
+        <MobileEditor opening={opening} />
+        <Notices />
+      </>
+    );
+  }
 
   return (
     <>
-      <main
-        aria-busy={opening}
-        className="relative hidden h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_minmax(220px,38vh)] lg:grid"
-      >
+      <main aria-busy={opening} className="relative grid h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_minmax(220px,38vh)]">
         <TopBar />
         <div className="grid min-h-0 grid-cols-[minmax(220px,17rem)_minmax(0,1fr)_minmax(240px,18rem)] gap-px bg-border">
           <LeftPanel />
@@ -73,22 +84,25 @@ export function Editor() {
           </div>
         )}
       </main>
-      <SmallScreen />
       <Notices />
       {touring && <Tour />}
     </>
   );
 }
 
-/** Below 1024px the editor's panels don't fit; say so plainly instead of cramming them. */
-function SmallScreen() {
-  return (
-    <main className="flex min-h-dvh flex-col justify-center gap-3 px-6 lg:hidden">
-      <h1 className="text-2xl font-semibold tracking-tight">Akira needs a bigger screen</h1>
-      <p className="max-w-sm text-sm text-muted">
-        The editor is built for laptops and desktops. Open this page on a screen at least 1024 pixels wide.
-      </p>
-    </main>
+/** Wide enough for the desktop layout's three columns. */
+const WIDE = "(min-width: 1024px)";
+
+/** Whether the desktop layout fits, following the window as it's resized or a tablet turns. */
+function useWideScreen(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(WIDE);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(WIDE).matches,
+    () => true,
   );
 }
 

@@ -77,6 +77,16 @@ body {
   }
 }
 
+/* Phone panels slide up from the bottom. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 /* The landing page's playhead crossing its timeline drawing. */
 @keyframes sweep {
   from {

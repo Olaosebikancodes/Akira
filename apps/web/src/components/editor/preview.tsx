@@ -101,7 +101,9 @@ function Transport() {
     <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-t border-border bg-panel px-3">
       <Timecode />
       <div className="flex items-center gap-0.5">
-        <IconButton icon={SkipBackIcon} label="Previous edit" shortcut="↑" onClick={() => seekToEdit(-1)} disabled={disabled} />
+        <span className="hidden sm:contents">
+          <IconButton icon={SkipBackIcon} label="Previous edit" shortcut="↑" onClick={() => seekToEdit(-1)} disabled={disabled} />
+        </span>
         <IconButton icon={CaretLeftIcon} label="Previous frame" shortcut="←" onClick={() => stepFrames(-1)} disabled={disabled} />
         <button
           type="button"
@@ -114,9 +116,11 @@ function Transport() {
           {playing ? <PauseIcon size={16} weight="fill" aria-hidden /> : <PlayIcon size={16} weight="fill" aria-hidden />}
         </button>
         <IconButton icon={CaretRightIcon} label="Next frame" shortcut="→" onClick={() => stepFrames(1)} disabled={disabled} />
-        <IconButton icon={SkipForwardIcon} label="Next edit" shortcut="↓" onClick={() => seekToEdit(1)} disabled={disabled} />
+        <span className="hidden sm:contents">
+          <IconButton icon={SkipForwardIcon} label="Next edit" shortcut="↓" onClick={() => seekToEdit(1)} disabled={disabled} />
+        </span>
       </div>
-      <div className="flex w-44 justify-end">
+      <div className="flex justify-end sm:w-44">
         <SafeZonesToggle />
       </div>
     </div>
@@ -134,7 +138,7 @@ function Timecode() {
   const project = useEditor((s) => s.project);
   const rate = project.canvas.frameRate;
   return (
-    <p className="w-44 whitespace-nowrap font-mono text-xs tabular-nums">
+    <p className="whitespace-nowrap font-mono text-[11px] tabular-nums sm:w-44 sm:text-xs">
       <output aria-label="Current time">{formatTimecode(time, rate)}</output>
       <span className="text-subtle"> / </span>
       <output aria-label="Duration" className="text-subtle">
