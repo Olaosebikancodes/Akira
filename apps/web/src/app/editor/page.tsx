@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Editor } from "@/components/editor/editor";
 
 export const metadata: Metadata = {
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function EditorPage() {
-  return <Editor />;
+  // The editor reads ?project= from the address, which only exists in the browser.
+  return (
+    <Suspense>
+      <Editor />
+    </Suspense>
+  );
 }

@@ -48,6 +48,13 @@ export interface Notice {
   message: string;
 }
 
+/**
+ * Where autosave is: "new" until the project has anything worth keeping,
+ * "pending" while changes wait to be written, then "saved", or "error" if
+ * the browser refused.
+ */
+export type SaveState = "new" | "pending" | "saved" | "error";
+
 interface EditorState {
   project: Project;
   past: Project[];
@@ -72,31 +79,47 @@ interface EditorState {
   textFocusRequest: number;
   notices: Notice[];
   player: Player | null;
+  saveState: SaveState;
+  /** True while a saved project's media is being opened. */
+  opening: boolean;
 }
 
-export const useEditor = create<EditorState>(() => ({
-  project: createProject("Untitled project", {
+function blankProject(): Project {
+  return createProject("Untitled project", {
     width: 1920,
     height: 1080,
     frameRate: FPS_30,
     background: { kind: "color", color: "#000000" },
-  }),
-  past: [],
-  future: [],
-  gestureStart: null,
-  selection: [],
-  time: 0,
+  });
+}
+
+/** Everything about the open project, as it is for a new one. */
+function freshProjectState(project: Project) {
+  return {
+    project,
+    past: [],
+    future: [],
+    gestureStart: null,
+    selection: [],
+    time: 0,
+    files: new Map<Id, MediaFile>(),
+    thumbnails: new Map<Id, Thumbnail[]>(),
+    waveforms: new Map<Id, Waveform>(),
+    notices: [],
+    saveState: "new" as SaveState,
+  };
+}
+
+export const useEditor = create<EditorState>(() => ({
+  ...freshProjectState(blankProject()),
   playing: false,
   zoom: 60,
   snapping: true,
-  files: new Map(),
-  thumbnails: new Map(),
-  waveforms: new Map(),
   importing: 0,
   recording: null,
   textFocusRequest: 0,
-  notices: [],
   player: null,
+  opening: false,
 }));
 
 const set = useEditor.setState;
@@ -208,6 +231,32 @@ export function setSnapping(snapping: boolean): void {
 export function setProjectName(name: string): void {
   // Renaming isn't worth an undo step.
   set({ project: { ...get().project, name } });
+}
+
+/** Starts a new, empty project, closing the media the last one had open. */
+export function resetEditor(): void {
+  for (const media of get().files.values()) media.dispose();
+  set(freshProjectState(blankProject()));
+}
+
+/** Shows a saved project with its media, which `files` has already opened. */
+export function loadProject(project: Project, files: Map<Id, MediaFile>): void {
+  for (const media of get().files.values()) media.dispose();
+  set({ ...freshProjectState(project), files, saveState: "saved" });
+  for (const [assetId, media] of files) {
+    const asset = project.assets[assetId];
+    if (!asset) continue;
+    void loadThumbnails(asset, media);
+    void loadWaveform(asset, media);
+  }
+}
+
+export function setOpening(opening: boolean): void {
+  set({ opening });
+}
+
+export function setSaveState(saveState: SaveState): void {
+  if (get().saveState !== saveState) set({ saveState });
 }
 
 export function notify(notice: Notice): void {

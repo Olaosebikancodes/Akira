@@ -2,6 +2,7 @@
 
 import { frameRateToNumber, setFontBaseUrl } from "@akira/engine";
 import { WarningCircleIcon, XIcon } from "@phosphor-icons/react";
+import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import {
   deleteSelection,
@@ -18,8 +19,23 @@ import {
 } from "./actions";
 import { Inspector } from "./inspector";
 import { LeftPanel } from "./left-panel";
+import { openSavedProject, startAutosave } from "./persistence";
 import { Preview } from "./preview";
-import { dismissNotice, fontBaseUrl, redo, seek, select, selectAll, setSnapping, setZoom, togglePlayback, undo, useEditor } from "./store";
+import {
+  dismissNotice,
+  fontBaseUrl,
+  notify,
+  redo,
+  resetEditor,
+  seek,
+  select,
+  selectAll,
+  setSnapping,
+  setZoom,
+  togglePlayback,
+  undo,
+  useEditor,
+} from "./store";
 import { Timeline } from "./timeline/timeline";
 import { TopBar } from "./top-bar";
 import { focusRing } from "./ui";
@@ -27,12 +43,16 @@ import { focusRing } from "./ui";
 export function Editor() {
   // The page measures text for the on-canvas handles, so it needs the fonts too.
   useEffect(() => setFontBaseUrl(fontBaseUrl()), []);
+  const opening = useOpenProject();
   useKeyboardShortcuts();
   useUnsavedWarning();
 
   return (
     <>
-      <main className="hidden h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_minmax(220px,38vh)] lg:grid">
+      <main
+        aria-busy={opening}
+        className="relative hidden h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_minmax(220px,38vh)] lg:grid"
+      >
         <TopBar />
         <div className="grid min-h-0 grid-cols-[minmax(220px,17rem)_minmax(0,1fr)_minmax(240px,18rem)] gap-px bg-border">
           <LeftPanel />
@@ -42,6 +62,11 @@ export function Editor() {
         <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] border-t border-border">
           <Timeline />
         </div>
+        {opening && (
+          <div className="absolute inset-0 z-50 grid place-items-center bg-background/80 backdrop-blur-sm">
+            <p className="text-sm text-muted">Opening project…</p>
+          </div>
+        )}
       </main>
       <SmallScreen />
       <Notices />
@@ -161,12 +186,37 @@ function useKeyboardShortcuts() {
   }, []);
 }
 
-/** Nothing is saved yet, so leaving the page would lose the edit. Warn first. */
+/**
+ * Opens the project named in the address (?project=id), or starts a new one,
+ * whenever the address changes, and autosaves throughout. True while a
+ * saved project is opening.
+ */
+function useOpenProject(): boolean {
+  const id = useSearchParams().get("project");
+  useEffect(() => startAutosave(), []);
+  useEffect(() => {
+    // A new project's first save puts its id in the address; it's already open.
+    if (id && id === useEditor.getState().project.id) return;
+    if (!id) {
+      resetEditor();
+      return;
+    }
+    void openSavedProject(id).then((found) => {
+      if (found) return;
+      resetEditor();
+      history.replaceState(null, "", "/editor");
+      notify({ kind: "error", message: "That project isn't saved in this browser. It may have been deleted." });
+    });
+  }, [id]);
+  return useEditor((s) => s.opening);
+}
+
+/** Projects save themselves, so only warn when leaving would lose a change still being written. */
 function useUnsavedWarning() {
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
-      const { project } = useEditor.getState();
-      if (project.tracks.some((track) => track.clips.length > 0)) event.preventDefault();
+      const { saveState } = useEditor.getState();
+      if (saveState === "pending" || saveState === "error") event.preventDefault();
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);

@@ -1,15 +1,35 @@
 "use client";
 
 import { ExportCancelledError, exportInWorker, projectDuration } from "@akira/engine";
-import { DownloadSimpleIcon, ExportIcon, XIcon } from "@phosphor-icons/react";
+import { CheckIcon, DownloadSimpleIcon, ExportIcon, SquaresFourIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
+import Link from "next/link";
 import { useState } from "react";
-import { fontBaseUrl, notify, setProjectName, useEditor } from "./store";
+import { fontBaseUrl, notify, type SaveState, setProjectName, useEditor } from "./store";
 import { Button, focusRing } from "./ui";
 
 type ExportState =
   | { kind: "idle" }
   | { kind: "running"; progress: number; controller: AbortController }
   | { kind: "done"; url: string; name: string; size: number };
+
+const SAVE_LABELS: Record<SaveState, string> = {
+  new: "",
+  pending: "Saving…",
+  saved: "Saved",
+  error: "Not saved",
+};
+
+/** Where autosave is, announced politely so screen readers hear it without being interrupted. */
+function SaveStatus() {
+  const state = useEditor((s) => s.saveState);
+  return (
+    <span role="status" className={`flex shrink-0 items-center gap-1 text-xs ${state === "error" ? "text-danger" : "text-subtle"}`}>
+      {state === "saved" && <CheckIcon size={12} weight="bold" aria-hidden />}
+      {state === "error" && <WarningCircleIcon size={13} aria-hidden />}
+      {SAVE_LABELS[state]}
+    </span>
+  );
+}
 
 export function TopBar() {
   const name = useEditor((s) => s.project.name);
@@ -48,6 +68,14 @@ export function TopBar() {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border bg-panel px-4">
       <div className="flex min-w-0 items-center gap-3">
+        <Link
+          href="/projects"
+          aria-label="All projects"
+          title="All projects"
+          className={`press -ml-1.5 grid size-8 place-items-center rounded-md text-muted hover:bg-raised hover:text-foreground ${focusRing}`}
+        >
+          <SquaresFourIcon size={17} aria-hidden />
+        </Link>
         <h1 className="text-[15px] font-semibold tracking-tight">Akira</h1>
         <span aria-hidden className="h-4 w-px bg-border" />
         <label className="sr-only" htmlFor="project-name">
@@ -62,6 +90,7 @@ export function TopBar() {
           onChange={(event) => setProjectName(event.target.value)}
           className={`h-7 min-w-0 max-w-64 rounded-md bg-transparent px-2 text-[13px] text-muted hover:bg-raised focus:bg-raised focus:text-foreground ${focusRing}`}
         />
+        <SaveStatus />
       </div>
 
       <div className="flex items-center gap-2" aria-live="polite">
