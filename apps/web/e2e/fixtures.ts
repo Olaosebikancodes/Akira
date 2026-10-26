@@ -14,6 +14,10 @@ export const FIXTURES = {
   long: path.join(FIXTURE_DIR, "long.mp4"),
   /** 200×200 PNG: a green circle on a transparent background, like a sticker. */
   sticker: path.join(FIXTURE_DIR, "sticker.png"),
+  /** 2 s of a textured scene with a red square in the middle, shaken up to 10 px every frame like a handheld camera. */
+  shaky: path.join(FIXTURE_DIR, "shaky.mp4"),
+  /** 2 s of a red and white checkered square sliding from x = 120 to x = 520 across plain grey, at y = 180. */
+  moving: path.join(FIXTURE_DIR, "moving.mp4"),
   /** 16×16 GIF that loops green then blue, half a second each. */
   animated: path.join(FIXTURE_DIR, "animated.gif"),
   /**
@@ -59,6 +63,8 @@ export async function ensureFixtures(page: Page): Promise<void> {
   writeFileSync(FIXTURES.rotated, Buffer.from(clips.rotated, "base64"));
   writeFileSync(FIXTURES.long, Buffer.from(clips.long, "base64"));
   writeFileSync(FIXTURES.sticker, Buffer.from(clips.sticker, "base64"));
+  writeFileSync(FIXTURES.shaky, Buffer.from(clips.shaky, "base64"));
+  writeFileSync(FIXTURES.moving, Buffer.from(clips.moving, "base64"));
 }
 
 /** 16-bit mono WAV of the dirty recording described on FIXTURES.dirty. */
@@ -203,7 +209,7 @@ function animatedGif(): Buffer {
 /** Runs in the page. Must be self-contained: it's serialised by Playwright. */
 async function buildClips(
   bundle: string,
-): Promise<{ colors: string; rotated: string; long: string; sticker: string }> {
+): Promise<{ colors: string; rotated: string; long: string; sticker: string; shaky: string; moving: string }> {
   const url = URL.createObjectURL(new Blob([bundle], { type: "text/javascript" }));
   // Built from a string so the test transpiler can't turn import() into require().
   const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
@@ -272,6 +278,37 @@ async function buildClips(
     ctx.fillStyle = `hsl(${(frame * 2) % 360} 70% 50%)`;
     ctx.fillRect(0, 0, width, height);
   });
+  const shaky = await encode(2, 0, (ctx, frame) => {
+    // A fixed, irregular shake: the same every time the fixture is built.
+    const dx = Math.round(10 * Math.sin(frame * 2.1));
+    const dy = Math.round(8 * Math.cos(frame * 1.7));
+    ctx.fillStyle = "#202020";
+    ctx.fillRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(dx, dy);
+    for (let y = -40; y < height + 40; y += 20) {
+      for (let x = -40; x < width + 40; x += 20) {
+        // A hashed shade per cell: irregular like a real scene, so there's no repeating pattern to mistake.
+        const shade = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+        ctx.fillStyle = `hsl(0 0% ${15 + Math.floor(shade * 60)}%)`;
+        ctx.fillRect(x, y, 20, 20);
+      }
+    }
+    ctx.fillStyle = "#ff0000";
+    ctx.fillRect(width / 2 - 30, height / 2 - 30, 60, 60);
+    ctx.restore();
+  });
+  const moving = await encode(2, 0, (ctx, frame) => {
+    ctx.fillStyle = "#303030";
+    ctx.fillRect(0, 0, width, height);
+    const cx = 120 + (400 * frame) / (fps * 2 - 1);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        ctx.fillStyle = (x + y) % 2 ? "#ff3030" : "#ffffff";
+        ctx.fillRect(cx - 40 + x * 20, 140 + y * 20, 20, 20);
+      }
+    }
+  });
   const stickerCanvas = new OffscreenCanvas(200, 200);
   const stickerContext = stickerCanvas.getContext("2d")!;
   stickerContext.fillStyle = "#00ff00";
@@ -282,5 +319,5 @@ async function buildClips(
   let stickerBinary = "";
   for (const byte of stickerBytes) stickerBinary += String.fromCharCode(byte);
 
-  return { colors, rotated, long, sticker: btoa(stickerBinary) };
+  return { colors, rotated, long, sticker: btoa(stickerBinary), shaky, moving };
 }

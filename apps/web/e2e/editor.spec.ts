@@ -793,6 +793,95 @@ test("reverses a clip in the background, and plays it forwards again", async ({ 
   await expect(errorNotice(page)).toHaveCount(0);
 });
 
+// Stabilisation and motion tracking
+
+/** Where the red in the preview is centred, as fractions of its width and height. */
+async function redCentre(page: Page): Promise<[number, number]> {
+  const png = await preview(page).screenshot();
+  return page.evaluate(async (base64) => {
+    const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+    const canvas = new OffscreenCanvas(image.width, image.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(image, 0, 0);
+    const { data } = ctx.getImageData(0, 0, image.width, image.height);
+    let x = 0;
+    let y = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i]! > 180 && data[i + 1]! < 80 && data[i + 2]! < 80) {
+        const pixel = i / 4;
+        x += pixel % image.width;
+        y += Math.floor(pixel / image.width);
+        count++;
+      }
+    }
+    return [x / count / image.width, y / count / image.height] as [number, number];
+  }, png.toString("base64"));
+}
+
+/** How far the red wanders across frames 10 to 20, as a fraction of the preview. */
+async function redWander(page: Page): Promise<number> {
+  await goToFrame(page, 10);
+  const centres: [number, number][] = [];
+  for (let frame = 10; frame <= 20; frame++) {
+    await expect(currentTime(page)).toHaveText(`00:00:00:${String(frame).padStart(2, "0")}`);
+    // Give the render worker a moment to draw the frame the clock shows, and wait for red to be on screen.
+    await page.waitForTimeout(150);
+    let centre: [number, number] = [Number.NaN, Number.NaN];
+    await expect
+      .poll(async () => {
+        centre = await redCentre(page);
+        return Number.isFinite(centre[0]);
+      })
+      .toBe(true);
+    centres.push(centre);
+    if (frame < 20) await stepFrames(page, 1);
+  }
+  const spread = (axis: 0 | 1) => Math.max(...centres.map((c) => c[axis])) - Math.min(...centres.map((c) => c[axis]));
+  return Math.max(spread(0), spread(1));
+}
+
+test("stabilises shaky footage", async ({ page }) => {
+  await addClip(page, FIXTURES.shaky);
+  const before = await redWander(page);
+  expect(before).toBeGreaterThan(0.02);
+  await clipTab(page, "Enhance");
+  await page.getByRole("button", { name: "Stabilise", exact: true }).click();
+  await expect(page.getByLabel("Strength value")).toBeVisible({ timeout: 60_000 });
+  await setNumber(page, "Strength", 100);
+  const after = await redWander(page);
+  expect(after).toBeLessThan(before / 3);
+  await expect(errorNotice(page)).toHaveCount(0);
+});
+
+test("tracks a moving object and makes text follow it", async ({ page }) => {
+  await addClip(page, FIXTURES.moving);
+  await page.keyboard.press("Home");
+  await addBoxedDot(page);
+  await page.getByRole("textbox", { name: "Text", exact: true }).blur();
+  await page.getByRole("button", { name: "Track an object" }).click();
+
+  // The square starts at (120, 180) in a 640×360 video that fills the 1920×1080 canvas.
+  const area = page.getByRole("application", { name: /Drag a box/ });
+  const box = (await area.boundingBox())!;
+  const scale = box.width / 1920;
+  await page.mouse.move(box.x + 220 * scale, box.y + 400 * scale);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 500 * scale, box.y + 680 * scale, { steps: 4 });
+  await page.mouse.up();
+
+  await expect(page.locator("[data-keyframe]").first()).toBeVisible({ timeout: 60_000 });
+  await expect(errorNotice(page)).toHaveCount(0);
+  await page.keyboard.press("Home");
+  const start = Number(await page.getByLabel("Position X value").inputValue());
+  // By 1.5 s the square has moved 305 of the video's 640 pixels: 48% of the canvas.
+  await goToFrame(page, 45);
+  await expect
+    .poll(async () => Number(await page.getByLabel("Position X value").inputValue()) - start)
+    .toBeGreaterThan(42);
+  expect(Number(await page.getByLabel("Position X value").inputValue()) - start).toBeLessThan(54);
+});
+
 // Saving
 
 function saved(page: Page): Locator {
