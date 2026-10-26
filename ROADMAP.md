@@ -57,25 +57,25 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Keyframes with easing for transform, opacity and volume
 - [x] Clip in, out and loop animations
 
-## 7. Saving
+## 7. Saving ✅
 
-- [ ] Autosave to local storage (OPFS and IndexedDB) and a project list
-- [ ] Export and import a project as a `.zip`
+- [x] Autosave to local storage (OPFS and IndexedDB) and a project list
+- [x] Export and import a project as a `.zip`
 
-## 8. Speed curves and reverse
+## 8. Speed curves and reverse ✅
 
-- [ ] Speed curves: presets and custom curves, with frame blending for slow motion
-- [ ] Reverse, built as a background job
+- [x] Speed curves: presets and custom curves, with frame blending for slow motion
+- [x] Reverse, built as a background job
 
-## 9. Stabilisation and motion tracking
+## 9. Stabilisation and motion tracking ✅
 
-- [ ] Background job system with cached results
-- [ ] Stabilisation (OpenCV.js)
-- [ ] Motion tracking that produces editable keyframes
+- [x] Background job system with cached results
+- [x] Stabilisation (our own optical flow and RANSAC in TypeScript, instead of a 15 MB OpenCV.js download)
+- [x] Motion tracking that produces editable keyframes
 
 ## 10. Ship
 
-- [ ] Export settings: MP4 and WebM up to 4K, bitrate presets
-- [ ] Enhance for TikTok preset, safe-zone overlay and upload tips
-- [ ] Landing page and docs
+- [x] Export settings: MP4 and WebM up to 4K, bitrate presets
+- [x] Enhance for TikTok preset, safe-zone overlay and upload tips
+- [x] Landing page and docs, plus a first-run tour of the editor
 - [ ] Deploy to Vercel
