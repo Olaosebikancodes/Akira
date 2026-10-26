@@ -52,10 +52,10 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 - [x] Blend modes, masks and chroma key
 - [x] Enhance: sharpen, denoise, FSR 1 upscale, auto colour, deband/deblock
 
-## 6. Keyframes and animations
+## 6. Keyframes and animations ✅
 
-- [ ] Keyframes with easing for transform, opacity and volume
-- [ ] Clip in, out and loop animations
+- [x] Keyframes with easing for transform, opacity and volume
+- [x] Clip in, out and loop animations
 
 ## 7. Saving
 
