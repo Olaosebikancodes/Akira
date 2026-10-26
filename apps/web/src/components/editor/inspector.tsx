@@ -20,8 +20,6 @@ import {
   isStill,
   type KeyframeProperty,
   locateClip,
-  MAX_SPEED,
-  MIN_SPEED,
   NO_CROP,
   type Micros,
   type Project,
@@ -30,7 +28,6 @@ import {
   setAspect,
   setAudioFilters,
   setClipFades,
-  setClipSpeed,
   setValuesAt,
   clipDuration,
   microsToSeconds,
@@ -44,6 +41,7 @@ import { useId, useState } from "react";
 import { ColourTab, EffectsTab, EnhanceTab, TransitionSection } from "./inspector-look";
 import { AnimationSection, TextSections } from "./inspector-text";
 import { KeyframeButton, KeyframesSection } from "./keyframe-controls";
+import { SpeedSection } from "./speed-section";
 import { commit, endGesture, liveEdit, useEditor } from "./store";
 import { Button, focusRing, IconButton, Section, Segmented, SliderField, Tabs } from "./ui";
 
@@ -175,26 +173,7 @@ function ClipInspector({
 
       {isVisual && <AnimationSection clip={clip} />}
 
-      {!still && (
-        <Section title="Speed">
-          <SliderField
-            label="Speed"
-            unit="×"
-            value={clip.speed}
-            min={MIN_SPEED}
-            max={MAX_SPEED}
-            step={0.05}
-            onChange={(v) => live((p) => setClipSpeed(p, clip.id, v))}
-            onCommit={endGesture}
-          />
-          <Segmented
-            label="Speed presets"
-            value={String(clip.speed)}
-            options={["0.5", "1", "1.5", "2"].map((v) => ({ value: v, label: `${v}×` }))}
-            onChange={(v) => commit((p) => setClipSpeed(p, clip.id, Number(v)))}
-          />
-        </Section>
-      )}
+      {!still && <SpeedSection clip={clip} />}
 
       {!still && asset.audio && <AudioSection project={project} clip={clip} time={time} />}
     </div>
