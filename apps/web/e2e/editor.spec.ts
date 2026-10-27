@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { audioLevels, DIRTY, ensureFixtures, FIXTURES, videoInfo } from "./fixtures";
 import { colourAt, preview, rgbAt } from "./preview";
@@ -96,6 +97,17 @@ async function exportVideo(page: Page, name = "export.mp4"): Promise<string> {
   await (await downloadPromise).saveAs(file);
   await page.getByRole("button", { name: "Dismiss export" }).click();
   return file;
+}
+
+/** Sizes of the export files kept on disk, in the origin private file system. */
+async function exportsOnDisk(page: Page): Promise<number[]> {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const folder = await root.getDirectoryHandle("exports").catch(() => null);
+    const sizes: number[] = [];
+    if (folder) for await (const handle of folder.values()) if (handle instanceof FileSystemFileHandle) sizes.push((await handle.getFile()).size);
+    return sizes;
+  });
 }
 
 async function setNumber(page: Page, label: string, value: number) {
@@ -1052,6 +1064,7 @@ test("can cancel an export", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
   await expect(page.getByRole("link", { name: "Download MP4" })).toHaveCount(0);
   await expect(errorNotice(page)).toHaveCount(0);
+  expect(await exportsOnDisk(page)).toEqual([]);
 });
 
 test("explains when a file isn't media", async ({ page }) => {
@@ -1097,6 +1110,71 @@ test("exports for TikTok, with safe zones and upload tips", async ({ page }) => 
   const file = test.info().outputPath("tiktok.mp4");
   await download.saveAs(file);
   expect(await videoInfo(page, file)).toEqual({ width: 1080, height: 1920, codec: "avc" });
+});
+
+test("exports TikTok's biggest size, marked as an experiment", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.keyboard.press("Escape");
+  await page.getByRole("radio", { name: "9:16" }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Export preset" }).getByRole("radio", { name: "TikTok" }).click();
+  await page.getByRole("radiogroup", { name: "TikTok size" }).getByRole("radio", { name: "Max (4K)" }).click();
+  const settings = page.getByRole("dialog", { name: "Export settings" });
+  await expect(settings).toContainText("2160 × 3840 MP4 at 30 fps");
+  await expect(settings).toContainText("An experiment");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export video" }).click();
+  await page.getByRole("button", { name: "Got it" }).click({ timeout: 90_000 });
+  await page.getByRole("link", { name: "Download MP4" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Untitled project (TikTok 4K).mp4");
+  const file = test.info().outputPath("tiktok-4k.mp4");
+  await download.saveAs(file);
+  expect(await videoInfo(page, file)).toEqual({ width: 2160, height: 3840, codec: "avc" });
+});
+
+test("exports a master at the project's own size, or upscaled to 4K", async ({ page }) => {
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Export preset" }).getByRole("radio", { name: "Master" }).click();
+  const settings = page.getByRole("dialog", { name: "Export settings" });
+  await expect(settings).toContainText("640 × 360 at 30 fps, H.264 MP4");
+
+  await page.getByRole("radiogroup", { name: "Master size" }).getByRole("radio", { name: "4K" }).click();
+  await expect(settings).toContainText("3840 × 2160 at 30 fps, H.264 MP4");
+  await expect(settings).toContainText("Upscaled with AMD FSR 1");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export video" }).click();
+  await page.getByRole("link", { name: "Download MP4" }).click({ timeout: 90_000 });
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Untitled project (Master).mp4");
+  const file = test.info().outputPath("master.mp4");
+  await download.saveAs(file);
+  expect(await videoInfo(page, file)).toEqual({ width: 3840, height: 2160, codec: "avc" });
+  // Written to disk as it was made, rather than held in memory: masters run to gigabytes.
+  expect(await exportsOnDisk(page)).toEqual([statSync(file).size]);
+});
+
+test("a master too big for H.264 moves to a newer codec, and says when it's software", async ({ page }) => {
+  // A machine like many laptops: H.264 stops at 4K and nothing is encoded in hardware.
+  await page.addInitScript(() => {
+    const isConfigSupported = VideoEncoder.isConfigSupported.bind(VideoEncoder);
+    VideoEncoder.isConfigSupported = async (config) => {
+      if (config.hardwareAcceleration === "prefer-hardware") return { supported: false, config };
+      if (config.codec.startsWith("avc") && config.width * config.height > 3840 * 2160) return { supported: false, config };
+      return isConfigSupported(config);
+    };
+  });
+  await page.reload();
+  await preview(page).waitFor();
+  await addClip(page, FIXTURES.colors);
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Export preset" }).getByRole("radio", { name: "Master" }).click();
+  await page.getByRole("radiogroup", { name: "Master size" }).getByRole("radio", { name: "8K" }).click();
+  const settings = page.getByRole("dialog", { name: "Export settings" });
+  await expect(settings).toContainText(/7680 × 4320 at 30 fps, (HEVC|AV1) MP4/);
+  await expect(settings.getByRole("alert")).toContainText("encodes in software");
 });
 
 test("shows first-timers a tour, once, and replays it from Help", async ({ page }) => {
