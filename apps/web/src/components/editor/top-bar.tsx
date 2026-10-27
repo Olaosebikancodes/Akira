@@ -1,11 +1,20 @@
 "use client";
 
-import { ExportCancelledError, exportInWorker, projectDuration } from "@akira/engine";
+import { ExportCancelledError, type ExportOptions, exportInWorker, type Project, projectDuration } from "@akira/engine";
 import { CheckIcon, DownloadSimpleIcon, ExportIcon, QuestionIcon, SquaresFourIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useState } from "react";
 import { ExportPanel, UploadTips } from "./export-panel";
-import { DEFAULT_EXPORT, type ExportSettings, exportSize, TIKTOK_FINISH, tiktokBitrate } from "./export-settings";
+import {
+  DEFAULT_EXPORT,
+  type ExportSettings,
+  exportSize,
+  formatSize,
+  planMaster,
+  TIKTOK_FINISH,
+  tiktokBitrate,
+  tiktokShortSide,
+} from "./export-settings";
 import { fontBaseUrl, notify, openTour, type SaveState, setProjectName, useEditor } from "./store";
 import { Button, focusRing, IconButton } from "./ui";
 
@@ -42,29 +51,47 @@ export function TopBar() {
   const [settings, setSettings] = useState<ExportSettings>(DEFAULT_EXPORT);
   const [panel, setPanel] = useState<"settings" | "tips" | null>(null);
 
+  /** What the chosen preset asks the export for, and what the file is called after it. */
+  async function exportPlan(project: Project): Promise<{ options: Partial<ExportOptions>; suffix: string } | null> {
+    if (settings.preset === "master") {
+      const plan = await planMaster(project, settings.masterSize);
+      if (!plan) return null;
+      const { width, height, codec, bitrate, upscale } = plan;
+      return { options: { format: "mp4", width, height, codecs: [codec], videoBitrate: bitrate, upscale }, suffix: " (Master)" };
+    }
+    if (settings.preset === "tiktok") {
+      const size = exportSize(project, tiktokShortSide(settings.tiktokSize));
+      const videoBitrate = tiktokBitrate(projectDuration(project), settings.tiktokSize);
+      const suffix = settings.tiktokSize === "max" ? " (TikTok 4K)" : " (TikTok)";
+      return { options: { format: "mp4", ...size, videoBitrate, finish: TIKTOK_FINISH }, suffix };
+    }
+    const size = exportSize(project, Number(settings.resolution));
+    return { options: { format: settings.format, ...size, quality: QUALITY[settings.quality] }, suffix: "" };
+  }
+
   async function runExport() {
     setPanel(null);
     const { project, files, player } = useEditor.getState();
     player?.pause();
     const tiktok = settings.preset === "tiktok";
-    const format = tiktok ? "mp4" : settings.format;
-    const size = exportSize(project, tiktok ? 1080 : Number(settings.resolution));
+    const plan = await exportPlan(project);
+    if (!plan) {
+      notify({ kind: "error", message: "This browser can't encode video that big." });
+      return;
+    }
+    const format = plan.options.format ?? "mp4";
     const controller = new AbortController();
     setExporting({ kind: "running", progress: 0, controller });
     // Exporting in a worker keeps the editor responsive during long renders.
     const worker = new Worker(new URL("./workers/export.worker.ts", import.meta.url), { type: "module" });
     try {
       const blob = await exportInWorker(worker, project, files, {
+        ...plan.options,
         signal: controller.signal,
         onProgress: (progress) => setExporting({ kind: "running", progress, controller }),
         fontBaseUrl: fontBaseUrl(),
-        format,
-        ...size,
-        ...(tiktok
-          ? { videoBitrate: tiktokBitrate(projectDuration(project)), finish: TIKTOK_FINISH }
-          : { quality: QUALITY[settings.quality] }),
       });
-      const name = `${project.name || "Akira"}${tiktok ? " (TikTok)" : ""}.${format}`;
+      const name = `${project.name || "Akira"}${plan.suffix}.${format}`;
       setExporting({ kind: "done", url: URL.createObjectURL(blob), name, size: blob.size, format: format === "webm" ? "WebM" : "MP4", tiktok });
       if (tiktok) setPanel("tips");
     } catch (error) {
@@ -124,7 +151,7 @@ export function TopBar() {
         )}
         {exporting.kind === "done" && (
           <>
-            <span className="text-xs text-muted">Exported, {(exporting.size / 1_000_000).toFixed(1)}&nbsp;MB</span>
+            <span className="text-xs text-muted">Exported, {formatSize(exporting.size)}</span>
             <a
               href={exporting.url}
               download={exporting.name}
