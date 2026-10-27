@@ -1,4 +1,4 @@
-import type { QualityLevel } from "mediabunny";
+import type { QualityLevel, VideoCodec } from "mediabunny";
 import { renderAudioMix } from "../audio/mix";
 import { type PcmAudio, pcmTransferables } from "../audio/pcm";
 import { audibleClips } from "../audio/schedule";
@@ -22,6 +22,8 @@ export type ExportRequest =
       height?: number;
       videoBitrate?: number;
       finish?: FinishOptions;
+      codecs?: readonly VideoCodec[];
+      upscale?: boolean;
       /** Absolute URL the built-in fonts are served from, ending in "/". */
       fontBaseUrl: string;
     }
@@ -48,6 +50,7 @@ export function serveExportWorker(scope: WorkerScope): void {
     setFontBaseUrl(message.fontBaseUrl);
     void (async () => {
       const files = new Map<Id, MediaFile>();
+      const output = await exportFile(message.format === "webm" ? "webm" : "mp4");
       try {
         for (const { assetId, file } of message.files) files.set(assetId, await MediaFile.open(file));
         const blob = await exportProject(message.project, files, {
@@ -58,11 +61,15 @@ export function serveExportWorker(scope: WorkerScope): void {
           height: message.height,
           videoBitrate: message.videoBitrate,
           finish: message.finish,
+          codecs: message.codecs,
+          upscale: message.upscale,
+          file: output?.handle,
           signal,
           onProgress: (progress) => post({ type: "progress", progress }),
         });
         post({ type: "done", blob });
       } catch (error) {
+        await output?.remove();
         post({
           type: "error",
           message: error instanceof Error ? error.message : String(error),
@@ -127,10 +134,40 @@ export async function exportInWorker(
       height: options.height,
       videoBitrate: options.videoBitrate,
       finish: options.finish,
+      codecs: options.codecs,
+      upscale: options.upscale,
       fontBaseUrl: options.fontBaseUrl,
     };
     worker.postMessage(request, audio ? pcmTransferables(audio) : []);
   });
+}
+
+/** Where finished exports are written in the origin private file system. */
+const EXPORTS_FOLDER = "exports";
+
+/**
+ * A fresh file for an export, on disk rather than in memory. Only the newest
+ * export is kept: earlier ones were downloaded or dismissed before this one
+ * could start. Null where the browser has no private file system to write to,
+ * and the export is then built in memory.
+ */
+async function exportFile(extension: string): Promise<{ handle: FileSystemFileHandle; remove: () => Promise<void> } | null> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(EXPORTS_FOLDER, { recursive: true }).catch(() => {});
+    const folder = await root.getDirectoryHandle(EXPORTS_FOLDER, { create: true });
+    const name = `${crypto.randomUUID()}.${extension}`;
+    const handle = await folder.getFileHandle(name, { create: true });
+    const remove = () => folder.removeEntry(name).catch(() => {});
+    // Older Safari has the file system but can't stream into it from here.
+    if (!("createWritable" in handle)) {
+      await remove();
+      return null;
+    }
+    return { handle, remove };
+  } catch {
+    return null;
+  }
 }
 
 /**
