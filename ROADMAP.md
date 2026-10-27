@@ -84,3 +84,9 @@ The v1 checklist. An item is only ticked once it's built, tested and committed. 
 
 - [x] Phone layout below 1024 px: preview, timeline, and tools that open as sheets
 - [x] Touch timeline: tap to select or seek, swipe to scroll, pinch to zoom
+
+## 12. Masters ✅
+
+- [x] Master export: the full picture or an FSR upscale to 4K or 8K, at the project's frame rate, in H.264, HEVC or AV1 by what the device can encode
+- [x] Exports stream to disk, so multi-gigabyte files don't run out of memory
+- [x] TikTok Max: the biggest file TikTok accepts (2160 × 3840, up to 60 fps), labelled as an experiment

@@ -34,7 +34,7 @@ const SECTIONS = [
   ["looks", "Looks and effects"],
   ["motion", "Motion"],
   ["saving", "Saving and moving projects"],
-  ["export", "Exporting, and TikTok"],
+  ["export", "Exporting, TikTok and masters"],
   ["phone", "On a phone"],
   ["shortcuts", "Keyboard shortcuts"],
   ["privacy", "Privacy and browsers"],
@@ -139,16 +139,26 @@ export default function DocsPage() {
             </p>
           </Section>
 
-          <Section id="export" title="Exporting, and TikTok">
+          <Section id="export" title="Exporting, TikTok and masters">
             <p>
               <em>Export</em> renders MP4 (H.264) or WebM (VP9) at up to 4K, at the quality you choose. The TikTok preset renders
-              1080 × 1920, adds a light clean-up and sharpen, and keeps the file within TikTok’s limits.
+              1080 × 1920 at the project’s frame rate, up to 60 fps, adds a light clean-up and sharpen, and keeps the file within
+              TikTok’s limits.
             </p>
             <p>
-              TikTok always re-compresses what you upload and plays it at 1080p at most; the preset gives that step the cleanest
-              possible start. For the best result, turn on <em>Upload HD</em> in TikTok’s settings, upload the exported file
-              straight from your phone or computer rather than sending it through WhatsApp or another app first, and turn on the
-              safe-zone guide in the preview so captions stay clear of TikTok’s buttons.
+              TikTok always re-compresses what you upload, and most viewers get 1080p. No file can make it keep 8K: it takes
+              uploads up to 4096 pixels a side and re-encodes those too. The preset gives that step the cleanest possible start.
+              Its <em>Max (4K)</em> size makes the biggest file TikTok accepts, 2160 × 3840; treat it as an experiment and compare
+              it with a 1080p upload. For the best result, turn on <em>Upload HD</em> in TikTok’s settings, upload the exported
+              file straight from your phone or computer rather than sending it through WhatsApp or another app first, and turn on
+              the safe-zone guide in the preview so captions stay clear of TikTok’s buttons.
+            </p>
+            <p>
+              The <em>Master</em> preset keeps everything: the project’s full size, every frame at its frame rate, and a bitrate
+              high enough for fine detail and grain. It’s for YouTube, archiving or editing again. It can also upscale to 4K or
+              8K, using AMD FSR 1 wherever footage is smaller, which sharpens edges but can’t invent detail. Akira picks H.264,
+              HEVC or AV1, whichever your device can encode at that size, and says so when it has to encode in software, which is
+              slow at 4K and up. Exports are written to disk as they’re made, so a master can run to gigabytes.
             </p>
           </Section>
 

@@ -16,7 +16,7 @@ No AI and no uploads. Your footage never leaves your machine: decoding, effects 
 - **Stabilisation and motion tracking:** classic computer vision (feature tracking and path smoothing), no AI. Tracking turns movement into keyframes you can edit
 - **Enhance:** sharpen, denoise, FSR 1 upscaling, auto colour and deband
 - **Audio:** multiple tracks with fades and waveforms, voiceover recording and noise reduction
-- **Export:** MP4 (H.264/AAC) and WebM up to 4K, plus a TikTok preset that prepares footage to survive TikTok's re-compression
+- **Export:** MP4 (H.264/AAC) and WebM up to 4K, a TikTok preset that prepares footage to survive TikTok's re-compression, and a master preset that keeps the full picture at up to 8K in H.264, HEVC or AV1
 - **Phones:** below 1024 px wide the editor switches to a phone layout, with tools in sheets along the bottom and a touch timeline: tap to select, swipe to scroll, pinch to zoom
 
 ## How it's built
@@ -33,6 +33,7 @@ The engine is plain TypeScript with no UI framework, so it can be tested on its 
 - **Shaders from others:** transitions come from [gl-transitions](https://github.com/gl-transitions/gl-transitions) and upscaling from AMD FidelityFX Super Resolution 1. Each is credited, with its licence, in [THIRD_PARTY_NOTICES.md](packages/engine/THIRD_PARTY_NOTICES.md)
 - **Time:** integer microseconds throughout, never floating-point seconds, so cuts stay frame-accurate
 - **Computer vision:** Shi–Tomasi corners, pyramidal Lucas–Kanade optical flow and RANSAC similarity fitting, written in TypeScript (`packages/engine/src/vision`) rather than pulling in a 15 MB OpenCV build
+- **Big exports:** exports stream into the origin private file system as they're encoded, so multi-gigabyte masters never sit in memory. A master's codec is picked by asking the browser what it can encode at that size and bitrate, and whether its hardware does it
 - **Background jobs:** reversing, measuring shake and tracking run in workers with progress and cancel; results are kept with the project so they're only worked out once
 - **Saving:** projects live in IndexedDB with media copied into the origin private file system; project zips are written with client-zip and read by a small ZIP64-aware reader that slices files instead of loading them
 
